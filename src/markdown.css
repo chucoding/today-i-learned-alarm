@@ -1,0 +1,14 @@
+.markdown-table {
+    border-collapse: collapse;
+}
+
+.markdown-table table {
+    width: 100%;
+    border: 1px solid #ddd; /* 원하는 테두리 스타일 및 색상을 지정 */
+}
+
+.markdown-table th, .markdown-table td {
+    border: 1px solid #ddd; /* 테이블 셀의 테두리 스타일 및 색상을 지정 */
+    padding: 8px;
+    text-align: left;
+}
