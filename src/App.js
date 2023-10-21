@@ -60,7 +60,6 @@ function App() {
       for (let file of commit_detail.files) {
           if(file.filename.endsWith(".md")) {
             const markdown = await getMarkdown(file.filename); //TODO markdown 다 받을때까지 대기한다음 setState 할 수 있도록
-            console.log(markdown);
             markdownText[day] = markdown;
             setMarkdownText(markdownText);
           }
