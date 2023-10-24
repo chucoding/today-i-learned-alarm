@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { initializeApp } from "firebase/app";
-import { getMessaging, getToken, onMessage } from "firebase/messaging";
+
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm'
 //import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -9,42 +8,6 @@ import {Prism as SyntaxHighlighter} from 'react-syntax-highlighter'
 import {dark} from 'react-syntax-highlighter/dist/esm/styles/prism'
 import Annotation from './modules/Annotation';
 import "../src/markdown.css";
-
-const firebaseConfig = {
-  apiKey: process.env.REACT_APP_API_KEY,
-  authDomain: "til-alarm.firebaseapp.com",
-  projectId: "til-alarm",
-  storageBucket: "til-alarm.appspot.com",
-  messagingSenderId: process.env.REACT_APP_MESSAGING_SENDER_ID,
-  appId: process.env.REACT_APP_APP_ID,
-  measurementId: process.env.REACT_APP_MEASUREMENT_ID,
-};
-
-const app = initializeApp(firebaseConfig);
-const messaging = getMessaging(app);
-
-(async function () {
-  console.log("권한 요청 중...");
-
-  const permission = await Notification.requestPermission();
-  if (permission === "denied") {
-    console.log("알림 권한 허용 안됨");
-    return;
-  }
-
-  console.log("알림 권한이 허용됨");
-
-  const token = await getToken(messaging, {
-    vapidKey: process.env.REACT_APP_VAPID_KEY,
-  });
-
-  if (token) console.log("token: ", token); // SENS PUSH API를 사용하기 위한 device token
-  else console.log("Can not get Token");
-
-  onMessage(messaging, (payload) => {
-    console.log("메시지가 도착했습니다.", payload);
-  });
-})();
 
 const ONE_DAY_AGO = 1;
 const ONE_WEEK_AGO = 7;
@@ -66,7 +29,7 @@ function App() {
       }
     }
   }
-
+  
   const getCommits = async (day) => {
     return await fetch("https://api.github.com/repos/chucoding/today-i-learned/commits?since=2023-09-05&until=2023-09-06", {
       headers : {
