@@ -63,78 +63,36 @@ function App() {
 
   return (
     <div>
-      <Annotation text="/* Day1 */" />
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          code: ({ node, inline, className, children, ...props }) => {
-            const match = /language-(\w+)/.exec(className || '');
-            return !inline && match ? (
-              <SyntaxHighlighter
-                style={dark}
-                language={match[1]}
-                PreTag="div"
-                children={String(children).replace(/\n$/, '')}
-                {...props}
-              />
-            ) : (
-              <code className={className} {...props}>
-                {children}
-              </code>
-            );
-          },
-        }}
-        children={markdownText[ONE_DAY_AGO]}
-        className="markdown-table"
-      />
-      <Annotation text="/* Day7 */" />
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          code: ({ node, inline, className, children, ...props }) => {
-            const match = /language-(\w+)/.exec(className || '');
-            return !inline && match ? (
-              <SyntaxHighlighter
-                style={dark}
-                language={match[1]}
-                PreTag="div"
-                children={String(children).replace(/\n$/, '')}
-                {...props}
-              />
-            ) : (
-              <code className={className} {...props}>
-                {children}
-              </code>
-            );
-          },
-        }}
-        children={markdownText[ONE_WEEK_AGO]}
-        className="markdown-table"
-      />
-      <Annotation text="/* Day30 */" />
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          code: ({ node, inline, className, children, ...props }) => {
-            const match = /language-(\w+)/.exec(className || '');
-            return !inline && match ? (
-              <SyntaxHighlighter
-                style={dark}
-                language={match[1]}
-                PreTag="div"
-                children={String(children).replace(/\n$/, '')}
-                {...props}
-              />
-            ) : (
-              <code className={className} {...props}>
-                {children}
-              </code>
-            );
-          },
-        }}
-        children={markdownText[ONE_MONTH_AGO]}
-        className="markdown-table"
-      />
+      {
+        Object.entries(markdownText).forEach(([key, value]) => {
+          <div key={key}>
+            <Annotation text={`/* Day${key} */`} />
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code: ({ node, inline, className, children, ...props }) => {
+                  const match = /language-(\w+)/.exec(className || '');
+                  return !inline && match ? (
+                    <SyntaxHighlighter
+                      style={dark}
+                      language={match[1]}
+                      PreTag="div"
+                      children={String(children).replace(/\n$/, '')}
+                      {...props}
+                    />
+                  ) : (
+                    <code className={className} {...props}>
+                      {children}
+                    </code>
+                  );
+                },
+              }}
+              children={value}
+              className="markdown-table"
+            />
+          </div>
+        })
+      }
     </div>
   );
 }
