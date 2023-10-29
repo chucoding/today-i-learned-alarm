@@ -1,0 +1,71 @@
+import CryptoJS from "crypto-js";
+
+export async function registerDeviceToken(userId, token) {
+    const timestamp = new Date().getTime().toString();
+    const ncloud_api_options = {
+        "method":"POST",
+        "headers": {
+          "Accept":"*/*",
+          "Content-Type":"application/json; charset=utf-8",
+          "x-ncp-apigw-timestamp":timestamp,
+          "x-ncp-iam-access-key":process.env.REACT_APP_NCLOUD_ACCESS_KEY,
+          "x-ncp-apigw-signature-v2":makeSignature(timestamp, "users")
+        },
+        "body":JSON.stringify({
+            "userId":userId,                // 사용자 아이디(사용자를 식별하는 아이디)
+            "deviceType":"GCM",             // 디바이스 타입(GCM: Android, APNS: iOS)
+            "deviceToken":token,            // 디바이스 토큰
+            "isNotificationAgreement":true, // 푸시 알림 메시지 수신여부(false 시 모든 메시지 미수신)
+            "isAdAgreement":false,          // 광고성 메시지 수신여부(messageType: AD)
+            "isNightAdAgreement":false      // 야간 광고성 메시지 수신여부(messageType: AD)(야간 - 오후 9시 ~ 익일 오전 8시)
+        })
+    };
+    
+    await fetch(`${process.env.REACT_APP_NCLOUD_PUSH_API_ENDPOINT}/users`, ncloud_api_options);
+}
+
+export async function registerSchedule(userId, scheduleCode) {
+    const timestamp = new Date().getTime().toString();
+    const ncloud_api_options = {
+        "method":"POST",
+        "headers": {
+          "Accept":"*/*",
+          "Content-Type":"application/json; charset=utf-8",
+          "x-ncp-apigw-timestamp":timestamp,
+          "x-ncp-iam-access-key":process.env.REACT_APP_NCLOUD_ACCESS_KEY,
+          "x-ncp-apigw-signature-v2":makeSignature(timestamp, "messages")
+        },
+        "body":JSON.stringify({
+            "target":{
+                "type":"USER",
+                "to":userId
+            },                
+            "message": {
+                "default": {
+                    "content": "복습할 내용이 도착하였습니다. 오늘도 파이팅 하세요~!😊"
+                }
+            },
+            "scheduleCode": scheduleCode
+        })
+    };
+
+    await fetch(`${process.env.REACT_APP_NCLOUD_PUSH_API_ENDPOINT}/messages`, ncloud_api_options);
+}
+
+function makeSignature(timestamp, path) {
+    var space = " ";                  // one space
+    var newLine = "\n";               // new line
+    var method = "POST";              // method
+
+    var hmac = CryptoJS.algo.HMAC.create(CryptoJS.algo.SHA256, process.env.REACT_APP_NCLOUD_SECRET_KEY);
+    hmac.update(method);
+    hmac.update(space);
+    hmac.update(`${process.env.REACT_APP_NCLOUD_PUSH_API_ENDPOINT}/${path}`);
+    hmac.update(newLine);
+    hmac.update(timestamp);
+    hmac.update(newLine);
+    hmac.update(process.env.REACT_APP_NCLOUD_ACCESS_KEY);
+  
+    var hash = hmac.finalize();
+    return hash.toString(CryptoJS.enc.Base64);
+}
