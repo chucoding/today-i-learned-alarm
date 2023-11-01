@@ -26,11 +26,11 @@ export default async function alarm() {
       vapidKey: process.env.REACT_APP_VAPID_KEY,
     });
   
-    const response = registerDeviceToken(process.env.REACT_APP_USER_ID, token);
-    if (response.ok) {
+    const isOk = registerDeviceToken(process.env.REACT_APP_USER_ID, token);
+    if (isOk) {
       registerSchedule(process.env.REACT_APP_USER_ID, process.env.REACT_APP_SCHEDULE_CODE);
     }
-
+    
     onMessage(messaging, (payload) => {
       console.log("메시지가 도착했습니다.", payload);
     });

@@ -21,7 +21,8 @@ export async function registerDeviceToken(userId, token) {
         })
     };
     
-    await fetch(`${process.env.REACT_APP_NCLOUD_PUSH_API_ENDPOINT}/users`, ncloud_api_options);
+    const response = await fetch(`${process.env.REACT_APP_NCLOUD_PUSH_API_ENDPOINT}/users`, ncloud_api_options);
+    return response.ok;
 }
 
 export async function registerSchedule(userId, scheduleCode) {
@@ -49,7 +50,8 @@ export async function registerSchedule(userId, scheduleCode) {
         })
     };
 
-    await fetch(`${process.env.REACT_APP_NCLOUD_PUSH_API_ENDPOINT}/messages`, ncloud_api_options);
+    const response = await fetch(`${process.env.REACT_APP_NCLOUD_PUSH_API_ENDPOINT}/messages`, ncloud_api_options);
+    return response.ok;
 }
 
 function makeSignature(timestamp, path) {
