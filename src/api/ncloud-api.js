@@ -38,8 +38,7 @@ export async function registerSchedule(userId, scheduleCode) {
         },
         "body":JSON.stringify({
             "target":{
-                "type":"USER",
-                "to":userId
+                "type":"ALL"
             },                
             "message": {
                 "default": {
