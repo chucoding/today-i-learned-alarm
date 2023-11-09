@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import * as serviceWorkerRegistration from './serviceWorkerRegistration';
 import reportWebVitals from './reportWebVitals';
-import alarm from './alarm';
+import setupAlarm from './setupAlarm';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
@@ -22,4 +22,4 @@ serviceWorkerRegistration.register();
 // or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
 reportWebVitals();
 
-alarm();
+setupAlarm();

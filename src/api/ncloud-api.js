@@ -9,7 +9,7 @@ export async function registerDeviceToken(userId, token) {
           "Content-Type":"application/json; charset=utf-8",
           "x-ncp-apigw-timestamp":timestamp,
           "x-ncp-iam-access-key":process.env.REACT_APP_NCLOUD_ACCESS_KEY,
-          "x-ncp-apigw-signature-v2":makeSignature(timestamp, "users")
+          "x-ncp-apigw-signature-v2":makeSignature("POST", "users", timestamp)
         },
         "body":JSON.stringify({
             "userId":userId,                // 사용자 아이디(사용자를 식별하는 아이디)
@@ -25,7 +25,24 @@ export async function registerDeviceToken(userId, token) {
     return response.ok;
 }
 
-export async function registerSchedule(userId, scheduleCode) {
+export async function removeDeviceToken(userId) {
+    const timestamp = new Date().getTime().toString();
+    const ncloud_api_options = {
+        "method":"DELETE",
+        "headers": {
+          "Accept":"*/*",
+          "Content-Type":"application/json; charset=utf-8",
+          "x-ncp-apigw-timestamp":timestamp,
+          "x-ncp-iam-access-key":process.env.REACT_APP_NCLOUD_ACCESS_KEY,
+          "x-ncp-apigw-signature-v2":makeSignature("DELETE", `users/${userId}`, timestamp)
+        }
+    };
+
+    const response = await fetch(`${process.env.REACT_APP_NCLOUD_PUSH_API_ENDPOINT}/users/${userId}`, ncloud_api_options);
+    return response.ok;
+}
+
+export async function registerSchedule(scheduleCode) {
     const timestamp = new Date().getTime().toString();
     const ncloud_api_options = {
         "method":"POST",
@@ -34,7 +51,7 @@ export async function registerSchedule(userId, scheduleCode) {
           "Content-Type":"application/json; charset=utf-8",
           "x-ncp-apigw-timestamp":timestamp,
           "x-ncp-iam-access-key":process.env.REACT_APP_NCLOUD_ACCESS_KEY,
-          "x-ncp-apigw-signature-v2":makeSignature(timestamp, "messages")
+          "x-ncp-apigw-signature-v2":makeSignature("POST", "messages", timestamp)
         },
         "body":JSON.stringify({
             "target":{
@@ -53,10 +70,9 @@ export async function registerSchedule(userId, scheduleCode) {
     return response.ok;
 }
 
-function makeSignature(timestamp, path) {
+function makeSignature(method, path, timestamp) {
     var space = " ";                  // one space
     var newLine = "\n";               // new line
-    var method = "POST";              // method
 
     var hmac = CryptoJS.algo.HMAC.create(CryptoJS.algo.SHA256, process.env.REACT_APP_NCLOUD_SECRET_KEY);
     hmac.update(method);
