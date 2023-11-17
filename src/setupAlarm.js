@@ -31,7 +31,7 @@ export default async function setupAlarm() {
     if (localStorage.getItem("token") === token) return;
 
     await removeDeviceToken(process.env.REACT_APP_USER_ID);
-    const isOk = registerDeviceToken(process.env.REACT_APP_USER_ID, token);
+    const isOk = await registerDeviceToken(process.env.REACT_APP_USER_ID, token);
 
     if (isOk) {
       registerSchedule(process.env.REACT_APP_SCHEDULE_CODE);
