@@ -1,7 +1,15 @@
 import Annotation from './modules/Annotation';
 import MarkdownBlock from './templates/MarkdownBlock';
+import setupAlarm from './setupAlarm';
 
 function App() {
+
+  const isInStandaloneMode = () => window.matchMedia('(display-mode: standalone)').matches;
+
+  if (isInStandaloneMode()) {
+    setupAlarm();
+  }
+
   return (
     <main>
       <Annotation text={`/* Day 1 */`} />

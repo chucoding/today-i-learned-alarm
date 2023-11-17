@@ -70,6 +70,12 @@ export async function registerSchedule(scheduleCode) {
     return response.ok;
 }
 
+export async function printSignature() {
+    const timestamp = new Date().getTime().toString();
+    console.log(timestamp);
+    console.log(makeSignature("POST", "messages", timestamp));
+}
+
 function makeSignature(method, path, timestamp) {
     var space = " ";                  // one space
     var newLine = "\n";               // new line

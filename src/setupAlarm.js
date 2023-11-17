@@ -1,6 +1,6 @@
 import { getMessaging, getToken } from "firebase/messaging";
 import { initializeApp } from "firebase/app";
-import { registerDeviceToken, registerSchedule, removeDeviceToken } from "./api/ncloud-api";
+import { registerDeviceToken, registerSchedule, removeDeviceToken, printSignature } from "./api/ncloud-api";
 
 const firebaseConfig = {
     apiKey: process.env.REACT_APP_API_KEY,
@@ -22,15 +22,20 @@ export default async function setupAlarm() {
       return;
     }
 
+    //printSignature();
+
     const token = await getToken(messaging, {
       vapidKey: process.env.REACT_APP_VAPID_KEY,
     });
   
+    if (localStorage.getItem("token") === token) return;
+
     await removeDeviceToken(process.env.REACT_APP_USER_ID);
     const isOk = registerDeviceToken(process.env.REACT_APP_USER_ID, token);
-    
-    /* if (isOk) {
-      registerSchedule(process.env.REACT_APP_USER_ID, process.env.REACT_APP_SCHEDULE_CODE); // TODO feat : registerSchedule when pwa installed. (Issue with schedule being registered when loading app)
-    }*/
+
+    if (isOk) {
+      registerSchedule(process.env.REACT_APP_SCHEDULE_CODE);
+      localStorage.setItem("token",token);
+    }
 };
 
