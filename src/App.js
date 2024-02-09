@@ -1,8 +1,10 @@
-import Annotation from './modules/Annotation';
-import MarkdownBlock from './templates/MarkdownBlock';
+import React from 'react';
+
+import Auth from './pages/Auth';
+import Viewer from './pages/Viewer';
 import setupAlarm from './setupAlarm';
 
-function App() {
+const App = () => {
 
   const isInStandaloneMode = () => window.matchMedia('(display-mode: standalone)').matches;
 
@@ -12,12 +14,7 @@ function App() {
 
   return (
     <main>
-      <Annotation text={`/* Day 1 */`} />
-      <MarkdownBlock target={1} />
-      <Annotation text={`/* Day 7 */`} />
-      <MarkdownBlock target={7} />
-      <Annotation text={`/* Day 30 */`} />
-      <MarkdownBlock target={30} />
+      <Auth/>
     </main>
   );
 }

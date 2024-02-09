@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@supabase/supabase-js": "^2.39.3",
     "crypto-js": "^4.1.1",
     "firebase": "^10.4.0",
     "http-proxy-middleware": "^2.0.6",
