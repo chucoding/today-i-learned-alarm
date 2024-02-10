@@ -361,10 +361,6 @@ button.primary,
   transition: all 0.2s ease;
 }
 
-.form-widget .button:hover {
-  background-color: #2a2a2a;
-}
-
 .form-widget .button > .loader {
   width: 17px;
   animation: spin 1s linear infinite;
