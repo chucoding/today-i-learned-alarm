@@ -376,3 +376,60 @@ button.primary,
   white-space: nowrap;
   width: 1px;
 }
+
+/* card-player */
+.card-player {
+  display: flex;
+  flex-direction: column;
+  background-color: green;
+  text-align: center;
+  height: 100vh;
+}
+
+.card-player .flashcard {
+  text-align: left !important;
+  width: 80% !important;
+  height: 50vh !important;
+  margin: 20px;
+  box-shadow: 10px 5px 5px black !important;
+  background-color: #24b47e !important;
+}
+
+
+.card-player .button-wrapper {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  padding: 20px;
+}
+
+/* button */
+.button-circle {
+  background-color: #3498db;
+  color: #ffffff;
+  font-size: 2rem;
+  padding: 10px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.button-circle:hover {
+  background-color: #2980b9;
+}
+
+.button-oval {
+  background-color: #3498db;
+  color: #ffffff;
+  font-size: 2rem;
+  padding: 10px 45px;
+  border: none;
+  border-radius: 25px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.button-oval:hover {
+  background-color: #2980b9;
+}
