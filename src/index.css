@@ -388,8 +388,18 @@ button.primary,
   width: 80% !important;
   height: 80vh !important;
   margin: 20px;
-  box-shadow: 5px 5px 5px 5px black !important;
+  border : 2px solid black;
+  border-radius: 20px;
   overflow: auto;
+  transform-style: preserve-3d;
+  transition: transform 0.4s;
+}
+
+.card-player .flashcard.flipped {
+  transform: rotateY(180deg);
+}
+.card-player .flashcard.flipped p {
+  transform: rotateY(180deg);
 }
 
 .slick-slide div {
