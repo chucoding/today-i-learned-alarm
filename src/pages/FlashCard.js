@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, Fragment } from 'react';
 import Slider from "react-slick";
 
 import "slick-carousel/slick/slick.css";
@@ -28,13 +28,17 @@ const FlashCard = () => {
                 dots={true}
                 arrows={false}
                 appendDots={dots => (
-                    <div style={{ top:'30px'}}>
+                    <div style={{ top:'10px'}}>
                         <ul style={{ padding:'0px' }}>{dots}</ul>
                     </div>
                 )}
             >
                 {questions.map((question, i) => 
-                    <div key={i} className='flashcard'>{question}</div>
+                    <Fragment key={i}>
+                        <div className='flashcard'>
+                            <p>{question}</p>
+                        </div>
+                    </Fragment>
                 )}                       
             </Slider>
             <div className='button-wrapper'>

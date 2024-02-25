@@ -377,24 +377,25 @@ button.primary,
   width: 1px;
 }
 
-/* card-player */
-.card-player {
-  display: flex;
-  flex-direction: column;
-  background-color: green;
-  text-align: center;
-  height: 100vh;
-}
-
 .card-player .flashcard {
-  text-align: left !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  padding: 3rem;
+  word-break: break-all;
+  text-align: left;
   width: 80% !important;
-  height: 50vh !important;
+  height: 80vh !important;
   margin: 20px;
-  box-shadow: 10px 5px 5px black !important;
-  background-color: #24b47e !important;
+  box-shadow: 5px 5px 5px 5px black !important;
+  overflow: auto;
 }
 
+.slick-slide div {
+  display: flex;
+  justify-content: center;
+}
 
 .card-player .button-wrapper {
   margin-top: auto;
