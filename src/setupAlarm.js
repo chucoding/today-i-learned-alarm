@@ -1,6 +1,6 @@
 import { getMessaging, getToken } from "firebase/messaging";
 import { initializeApp } from "firebase/app";
-import { registerDeviceToken, registerSchedule, removeDeviceToken, printSignature } from "./api/ncloud-api";
+import { registerDeviceToken, registerSchedule, removeDeviceToken } from "./api/ncloud-api";
 
 const firebaseConfig = {
     apiKey: process.env.REACT_APP_API_KEY,
@@ -21,8 +21,6 @@ export default async function setupAlarm() {
       console.log("알림 권한 허용 안됨");
       return;
     }
-
-    //printSignature();
 
     const token = await getToken(messaging, {
       vapidKey: process.env.REACT_APP_VAPID_KEY,
