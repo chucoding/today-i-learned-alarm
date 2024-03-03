@@ -3,7 +3,13 @@ import React from 'react';
 import Annotation from '../modules/Annotation';
 import MarkdownBlock from '../templates/MarkdownBlock';
 
-const Viewer = () => {
+/**
+ * 2024-03-03 Deprecated
+ * 날짜별 출력 방식에서 flip 카드 방식으로 변경
+ * 
+ * @returns 
+ */
+const DocViewer = () => {
     return (
         <>
             <Annotation text={`/* Day 1 */`} />
@@ -16,4 +22,4 @@ const Viewer = () => {
     );
 }
 
-export default Viewer;
+export default DocViewer;

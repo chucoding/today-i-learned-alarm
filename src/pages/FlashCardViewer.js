@@ -1,16 +1,15 @@
 import React, { useEffect, useState, useRef } from 'react';
 import Slider from "react-slick";
+import { useIndexedDB } from "react-indexed-db-hook";
 
 import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
 
-import { getGithubData } from '../services/github-service';
 import MarkdownBlock from '../templates/MarkdownBlock';
 
-const FlashCard = () => {
+const FlashCardViewer = () => {
     const [cards, setCards] = useState([]);
     const [flipped, setFlipped] = useState(false);
-    const daysAgoList = [1,7,30];
 
     let sliderRef = useRef(null);
     const next = () => {
@@ -24,22 +23,15 @@ const FlashCard = () => {
         setFlipped(!flipped);
     };
 
-    useEffect(()=>{
-        (async () => {
-            let promises = daysAgoList.map(async daysAgo => {
-                const data = await getGithubData(daysAgo);
-                //TODO 질문 개수 별로 데이터 만들기
-                return { question: 'test', answer: data };
-            });
-        
-            let list = await Promise.all(promises);
-            setCards(list);
-        })();
-
-        // TODO 덱 셔플
+    const { getAll } = useIndexedDB("data");
+    
+    useEffect(() => {
+        getAll().then((dataFromDB) => {
+            setCards(dataFromDB[0].data);
+        });
     }, []);
     
-    if (cards.length == 0) return null;
+    if (cards.length === 0) return null;
     return (
         <div className='card-player'>
             <div>
@@ -50,6 +42,7 @@ const FlashCard = () => {
                     dots={true}
                     arrows={false}
                     swipe={false}
+                    infinite={false}
                     appendDots={dots => (
                         <div style={{ top:'10px'}}>
                             <ul style={{ padding:'0px' }}>{dots}</ul>
@@ -76,4 +69,4 @@ const FlashCard = () => {
     );
 }
 
-export default FlashCard;
+export default FlashCardViewer;

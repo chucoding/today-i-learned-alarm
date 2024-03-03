@@ -14,7 +14,7 @@ export async function getGithubData(daysAgo) {
     const commits = await getCommits(since, until);
 
     if (commits.length === 0) {
-        return "";
+        return null;
     }
 
     for (let commit of commits) {

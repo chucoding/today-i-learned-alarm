@@ -8,4 +8,12 @@ module.exports = function (app) {
         changeOrigin: true
       })
     );
+
+    app.use(
+      '/question-generator',
+      createProxyMiddleware({
+        target: process.env.REACT_APP_NCLOUD_HYPERCLOVAX_URL,
+        changeOrigin: true
+      })
+    );
 };
