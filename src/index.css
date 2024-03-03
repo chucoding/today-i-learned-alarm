@@ -413,37 +413,31 @@ button.primary,
 .card-player .button-wrapper {
   margin-top: auto;
   display: flex;
-  justify-content: space-between;
-  padding: 20px;
+  justify-content: center;
 }
 
 /* button */
 .button-circle {
-  background-color: #3498db;
+  background-color: #00A6ED;
   color: #ffffff;
   font-size: 2rem;
-  padding: 10px;
   border: none;
-  border-radius: 50%;
+  border-radius: 2rem;
   cursor: pointer;
   transition: background-color 0.3s ease;
-}
-
-.button-circle:hover {
-  background-color: #2980b9;
+  flex-grow: 1;
+  margin: 1rem;
 }
 
 .button-oval {
-  background-color: #3498db;
+  background-color: #00A6ED;
   color: #ffffff;
   font-size: 2rem;
-  padding: 10px 45px;
   border: none;
-  border-radius: 25px;
+  border-radius: 2rem;
   cursor: pointer;
   transition: background-color 0.3s ease;
-}
-
-.button-oval:hover {
-  background-color: #2980b9;
+  flex-grow: 2;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
 }
