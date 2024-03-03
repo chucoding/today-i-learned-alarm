@@ -33,7 +33,7 @@ const FlashCardViewer = () => {
         });
     }, []);
     
-    if (cards.length === 0) return null;
+    if (cards.length === 0) return <div style={{display:"flex", height:"100vh", alignItems:"center", justifyContent:"center", background:"lightgray", fontSize:"larger"}}>질문을 생성하고 있습니다.<br/>잠시만 기다려주세요.</div>
     return (
         <div className='card-player'>
             <div>
