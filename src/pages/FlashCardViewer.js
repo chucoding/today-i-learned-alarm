@@ -13,9 +13,11 @@ const FlashCardViewer = () => {
 
     let sliderRef = useRef(null);
     const next = () => {
+        setFlipped(false);
         sliderRef.slickNext();
     };
     const previous = () => {
+        setFlipped(false);
         sliderRef.slickPrev();
     };
 
