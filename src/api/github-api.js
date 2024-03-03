@@ -20,5 +20,5 @@ export async function getMarkdown(filename) {
             "Accept":"application/vnd.github.raw",
             "Authorization":`Bearer ${process.env.REACT_APP_GITHUB_TOKEN}`
         }
-    }).then(response =>response.text());
+    }).then(response => response.ok ? response.text() : '');
 }
