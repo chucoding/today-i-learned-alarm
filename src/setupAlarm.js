@@ -1,6 +1,6 @@
 import { getMessaging, getToken } from "firebase/messaging";
 import { initializeApp } from "firebase/app";
-import { registerDeviceToken, registerSchedule, removeDeviceToken } from "./api/ncloud-api";
+import { registerDeviceToken, registerSchedule, removeDeviceToken } from "./api/ncloud-api"; //TODO remove
 
 const firebaseConfig = {
     apiKey: process.env.REACT_APP_API_KEY,

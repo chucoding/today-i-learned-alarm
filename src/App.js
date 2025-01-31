@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { initDB, useIndexedDB } from "react-indexed-db-hook";
 
 import { DBConfig } from './DBConfig';
-import setupAlarm from './setupAlarm';
+//import setupAlarm from './setupAlarm';
 import { chatCompletions } from './api/ncloud-api';
 import { getCurrentDate } from './modules/utils';
 import FlashCardViewer from './pages/FlashCardViewer';
@@ -16,11 +16,12 @@ const App = () => {
 
   const { add, getByID } = useIndexedDB("data");
   const [loading, setLoading] = useState(true);
-
+/*
   const isInStandaloneMode = () => window.matchMedia('(display-mode: standalone)').matches;
   if (isInStandaloneMode()) {
     setupAlarm();
   }
+*/
 
   useEffect(()=>{
     (async () => {
