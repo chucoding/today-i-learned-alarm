@@ -1,106 +1,161 @@
 ---
 type: firestore-boundary
-title: Firestore 데이터 경계
-description: Firestore에서 사용자 소유 문서, 공개 읽기 캐시, 서버 전용 상태를 분리하는 규칙과 안전한 스키마 변경 조건을 설명한다.
+title: Firestore 소유권과 접근 경계
+description: 사용자 설정과 일별 덱, 공개 데모 캐시, 서버 전용 사용량·사전 생성 상태를 Firestore 규칙과 Admin SDK로 분리하는 모델을 설명한다. 규칙 변경 시 직접 쓰기와 서버 쓰기를 함께 검토하는 기준을 제공한다.
 tags: [firestore, security, data-model, firebase]
+verified:
+  - by: openwiki/0.7.0
+    at: 2026-10-18T17:37:30.715Z
 sources:
   - id: openwiki-source-e4f0bc11a3299c1766d09546
     resource: repo://app/src/features/flashcard/api/demo-cache.ts
+  - id: openwiki-source-38581190ff5761f7869b5cfa
+    resource: repo://app/src/features/flashcard/model/useTodayFlashcards.ts
   - id: openwiki-source-160da25a44dc70741e18b505
     resource: repo://app/src/features/subscription/model/use-regenerate-quota.ts
   - id: openwiki-source-bfb9ae1b0bf4894421ba55ae
     resource: repo://app/src/features/trending-repos/api/repos.ts
+  - id: openwiki-source-91ade00a402229b1bfaff498
+    resource: repo://app/src/pages/Login.tsx
   - id: openwiki-source-0e97256d55897f70f1346d0b
     resource: repo://app/src/pages/Settings.tsx
   - id: openwiki-source-305c79a54c0c85759c0fa7af
     resource: repo://app/src/shared/config/firebase.ts
   - id: openwiki-source-60b51f83565a4de6497fc329
     resource: repo://firestore.rules
+  - id: openwiki-source-354704af6b257d0a5d6ce676
+    resource: repo://functions/package.json
   - id: openwiki-source-c4371dcf561815a8869a8951
     resource: repo://functions/src/ai-guard.ts
   - id: openwiki-source-f156ae50cd10545e0fcc37c4
     resource: repo://functions/src/demo-flashcards.ts
   - id: openwiki-source-bcaca72a0469dfd8f568b3ca
     resource: repo://functions/src/flashcard-pregeneration.ts
+  - id: openwiki-source-94f067e411507438068e4aeb
+    resource: repo://functions/src/index.ts
   - id: openwiki-source-aa514403247ea10f60f7e50c
     resource: repo://functions/src/regenerateQuestion.ts
   - id: openwiki-source-d21d1984cc0c0d8b5a326634
     resource: repo://functions/src/stripe.ts
   - id: openwiki-source-541ae8313cfd3a449526d707
     resource: repo://functions/src/trending.ts
-verified:
-  - by: openwiki/0.7.0
-    at: 2026-10-05T07:59:19.883Z
-generated: { by: "openwiki/0.7.0", at: "2026-10-05T07:59:19.883Z" }
+generated: { by: "openwiki/0.7.0", at: "2026-10-18T17:37:30.715Z" }
 ---
 
-`firestore.rules`는 클라이언트 SDK가 소유할 데이터와 Cloud Functions의 Admin SDK가 관리할 상태를 구분한다. 핵심 원칙은 **클라이언트가 삭제할 수 있는 `users/{uid}`에 한도·완료 상태처럼 삭제로 초기화되어서는 안 되는 값을 두지 않는 것**이다. Admin SDK는 Firestore 보안 규칙을 우회하므로, 규칙에 클라이언트 `match` 허용을 추가하지 않은 컬렉션이 서버 전용 저장소가 된다.
+`firestore.rules`는 브라우저 Firestore SDK의 권한 경계다. 반면 Cloud Functions의 Admin SDK는 이 규칙을 적용받지 않는다. 따라서 경계의 핵심은 **사용자가 직접 관리해도 되는 문서만 규칙으로 열고, 한도·작업 완료 기록처럼 사용자가 삭제로 초기화하면 안 되는 상태는 규칙에 `match`를 만들지 않는 별도 컬렉션에 둔다**는 것이다.
 
 ```mermaid
-flowchart TD
-  Client["클라이언트 SDK"] --> Rules{"firestore.rules"}
-  Rules -->|"본인 허용 필드"| User["users uid"]
-  Rules -->|"본인 읽기와 쓰기"| Deck["users uid flashcards date"]
-  Rules -->|"본인 읽기"| Regen["regenerateCounts uid"]
-  Rules -->|"공개 읽기"| Cache["meta trendingRepos 및 demoFlashcards"]
-  Rules -->|"매치 없음은 거부"| Private["aiUsage 및 완료 상태"]
-  Admin["Cloud Functions Admin SDK"] --> User
-  Admin --> Deck
-  Admin --> Regen
-  Admin --> Cache
-  Admin --> Private
+erDiagram
+  USERS {
+    string uid PK
+    string client_settings
+    string server_subscription_fields
+  }
+  FLASHCARDS {
+    string date_key PK
+    string data_ko
+    string data_en
+  }
+  REGENERATE_COUNTS {
+    string uid PK
+    string date
+    number count
+  }
+  FLASHCARD_PREGENERATION {
+    string uid PK
+    string date_key
+    string outcome
+  }
+  AI_USAGE {
+    string counter_id PK
+    string date
+    number count
+  }
+  DEMO_REGENERATE_COUNTS {
+    string device_hash PK
+    string date
+    number count
+  }
+  TRENDING_REPOS {
+    string id PK
+    string repos
+  }
+  DEMO_FLASHCARDS {
+    string cache_id PK
+    string cards
+  }
+  DELETED_USERS {
+    string uid PK
+    string deleted_at
+  }
+
+  USERS ||--o{ FLASHCARDS : "client deck"
+  USERS ||--|| REGENERATE_COUNTS : "read projection"
+  USERS ||--|| FLASHCARD_PREGENERATION : "server status"
 ```
 
-클라이언트 요청은 규칙으로 제한되고, 서버 작업은 Admin SDK로 같은 저장소의 서버 전용 상태까지 관리하는 경계를 보여 준다.
+`USERS`와 `FLASHCARDS`는 본인 클라이언트가 소유하는 쓰기 영역이고, `USERS` 안의 구독 필드는 서버만 쓴다. `REGENERATE_COUNTS`는 사용자에게 읽기만 보이는 투영이며, `FLASHCARD_PREGENERATION`, `AI_USAGE`, `DEMO_REGENERATE_COUNTS`는 기본 거부 서버 영역이다. `TRENDING_REPOS`와 `DEMO_FLASHCARDS`는 공개 읽기 캐시다.
 
-## 소유권별 데이터 모델
+## 컬렉션별 접근 모델
 
-| 영역 | 경로와 접근 | 책임과 수명 |
-|---|---|---|
-| 사용자 프로필·설정 | `users/{uid}`: 인증된 본인만 읽고 생성·갱신·삭제 | 저장소 선택, 온보딩, GitHub 접근 토큰, 푸시 선호와 사전 생성에 필요한 시간대·언어를 담는다. 구독 필드는 같은 문서에 있어도 서버가 소유한다. |
-| 사용자 덱 | `users/{uid}/flashcards/{YYYY-MM-DD}`: 본인 읽기·쓰기 | 앱이 생성·번역·카드 편집 결과를 저장하고, 서버 사전 생성도 같은 날짜 문서에 병합한다. 설정 저장과 탈퇴는 클라이언트가 이 하위 컬렉션을 삭제한다. |
-| 표시 전용 서버 카운터 | `regenerateCounts/{uid}`: 본인 읽기만 | 질문 재생성의 남은 횟수 표시에만 공개한다. 실제 쓰기는 HTTP 함수가 수행한다. |
-| 공개 캐시 | `meta/trendingRepos`, `demoFlashcards/{cacheId}`: 비로그인도 읽기 가능, 클라이언트 쓰기 불가 | 랜딩 페이지가 읽는 Trending 목록과 사전 생성 데모 카드다. 스케줄러가 갱신·정리한다. |
-| 서버 전용 상태 | `aiUsage`, `demoRegenerateCounts`, `flashcardPregeneration` | 규칙에 `match`가 없어 클라이언트 읽기·쓰기가 기본 거부된다. 호출 비용 한도와 사전 생성 완료 여부를 서버만 관리한다. |
-| 탈퇴 당일 기록 | `deletedUsers/{uid}`: 본인 읽기·생성만 | 클라이언트가 탈퇴 전에 기록하고, 서버 정리 작업이 당일 기록만 남긴다. 이 경로에는 클라이언트 삭제 허용이 없다. |
+| 경로 | 클라이언트 권한 | 클라이언트 소유/표시 필드 | 서버 전용 역할 |
+|---|---|---|---|
+| `users/{uid}` | 인증 UID와 문서 ID가 같은 본인만 읽기·생성·갱신·삭제 | `repositories`, 온보딩·푸시·시간대·언어·갱신 시각, GitHub 접근 자격 증명 | 같은 문서의 `subscriptionTier`, `subscriptionPeriodEnd`, `stripeCustomerId`는 서버 전용 필드 |
+| `users/{uid}/flashcards/{YYYY-MM-DD}` | 본인 읽기·쓰기 | 언어별 `data_ko`/`data_en` 덱 | 사전 생성 작업도 Admin SDK로 같은 문서에 병합 |
+| `regenerateCounts/{uid}` | 본인 읽기만 | 남은 횟수 표시용 `date`, `count` | 재생성 함수만 기록 |
+| `meta/trendingRepos`, `demoFlashcards/{cacheId}` | 누구나 읽기, 클라이언트 쓰기 없음 | 공개 가능한 Trending 목록과 데모 카드만 | 스케줄러가 생성·갱신·정리 |
+| `aiUsage`, `demoRegenerateCounts`, `flashcardPregeneration` | 규칙 `match`가 없어 읽기·쓰기·삭제 모두 기본 거부 | 없음 | AI 사용량, 데모 재생성 사용량, 사전 생성 완료 상태 |
+| `deletedUsers/{uid}` | 본인 읽기·생성만 | 탈퇴 당일 재가입 확인에 쓰는 탈퇴 기록 | 클라이언트 삭제는 규칙으로 열려 있지 않음 |
+| `notices/{noticeId}` | 인증 사용자 읽기만 | 공지 표시 | 콘솔 등 서버 측 운영 경로의 쓰기 |
 
-`notices/{noticeId}`는 인증 사용자에게 읽기만 허용한다. 반면 현재 설정 화면은 `config/notice`를 구독하는데, 이 경로에는 규칙 `match`가 없으므로 클라이언트 읽기는 기본 거부다. `notices` 규칙이 `config/notice`까지 포괄한다고 가정하지 말고, 공지 경로를 맞추거나 별도의 읽기 정책을 설계해야 한다.
+규칙의 `match`가 없는 컬렉션은 “서버 전용”이라는 별도 기능이 아니라 기본 거부의 결과다. Admin SDK는 이 규칙을 우회하므로 서버 코드가 그 상태의 유일한 읽기·쓰기 주체가 된다.
 
-## `users/{uid}`: 허용 목록과 필드 검증
+## 사용자 문서의 필드 경계
 
-문서 ID와 Firebase Auth UID가 같을 때만 접근할 수 있다. 생성은 문서의 **모든** 키가 허용 목록 안에 있어야 하고, 갱신은 `request.resource.data.diff(resource.data).affectedKeys()`가 허용 목록 안에 있어야 한다. 따라서 서버가 추가한 `subscriptionTier`, `subscriptionPeriodEnd`, `stripeCustomerId`가 기존 문서에 있어도 클라이언트가 다른 설정을 변경할 수 있지만, 해당 필드를 추가·수정·삭제하려 하면 거부된다.
+`users/{uid}` 생성은 문서의 모든 키가 `userWritableFields()` 허용 목록에 있어야 하고, 갱신은 `diff(...).affectedKeys()`만 그 목록 안에 있어야 한다. 갱신에서 바뀐 키만 검증하는 설계이므로 이미 존재하는 서버 필드를 보존한 채 클라이언트 설정을 병합할 수 있다. 반대로 클라이언트가 구독 필드를 추가·수정·삭제하면 변경 키 검사에서 거부된다.
 
-클라이언트 허용 필드는 `repositories`, 온보딩 플래그, `githubToken`, 푸시 설정과 FCM 토큰, `timezone`, `language`, `updatedAt`이다. 규칙은 다음을 함께 검사한다.
+허용된 필드는 다시 타입과 크기를 검증한다. 예를 들어 저장소 목록은 최대 5개이고 각 항목은 `fullName`과 HTTPS `url`을 요구하며, `branch` 이외의 추가 키를 허용하지 않는다. 언어는 `ko`/`en`만 허용하고 푸시 시각과 문자열 필드도 범위를 제한한다. 이 검증은 UI의 Free/Pro 선택 제한을 보안 경계로 간주하지 않게 한다.
 
-- `repositories`는 최대 5개이며 각 항목은 `fullName`과 HTTPS `url`을 반드시 포함하고, 선택 `branch` 외의 키를 가질 수 없다. 문자열 길이도 제한한다.
-- 불리언 플래그, 토큰과 시간대 문자열 길이, `language`의 `ko`/`en`, 푸시 시각의 0–23 범위를 검사한다. `preferredPushHour`는 과거 번들 호환성을 위해 정수보다 넓은 `number`를 허용한다.
-- `updatedAt`은 길이 제한이 있는 문자열 또는 Firestore `timestamp`를 받는다. PWA 서비스 워커 캐시에 남은 과거 번들이 `Date`를 그대로 기록할 수 있으므로, 타입을 한 번에 문자열로 좁히면 배포 뒤에도 실행되는 구버전 클라이언트의 설정 저장이 실패한다.
+`updatedAt`은 Firestore `timestamp` 또는 제한된 길이의 문자열을 허용한다. 서비스 워커에 남아 새 규칙 배포 뒤에도 실행될 수 있는 이전 번들이 `Date`를 쓸 수 있으므로, 이 호환 표현을 즉시 제거하면 이전 클라이언트의 설정 저장이 실패한다. 이는 Firestore IndexedDB 영속성 설정과는 별개다. 클라이언트 초기화는 `getFirestore(app)`만 호출하며 영속성을 명시적으로 활성화하지 않는다.
 
-설정 화면은 `setDoc(..., { merge: true })` 또는 필드 `updateDoc`로 자신이 소유한 필드만 쓴다. 문서 전체를 덮어쓰면 규칙이 서버 필드 변경으로 판단해 거부할 뿐 아니라, 서버 필드 보존이라는 의도도 흐려진다. 로그인도 새 문서에는 GitHub 토큰과 `updatedAt`만 만들고, 기존 문서에서는 그 두 필드만 갱신한다. 구독 변경은 Stripe 웹훅이 Admin SDK의 병합 쓰기로 수행하며, 클라이언트는 구독 상태를 읽어서 UI와 한도를 선택한다.
+설정 화면은 `setDoc(..., { merge: true })`와 `updateDoc`로 자기 필드만 쓴다. 저장소 설정을 저장한 뒤에는 해당 사용자의 일별 덱 문서를 직접 삭제해 새 생성 경로를 시작하고, 푸시 설정도 관련 필드만 병합한다. 따라서 `users` 허용 목록 또는 덱 규칙을 변경할 때는 이 직접 쓰기·삭제 경로와 `useTodayFlashcards`의 덱 저장을 모두 함께 확인해야 한다.
 
-## 삭제와 초기화되지 않아야 하는 상태
+### 구독 필드와 Stripe 모듈의 현재 상태
 
-본인 `users/{uid}` 삭제는 회원 탈퇴를 위해 의도적으로 허용된다. 이 작업은 문서의 서버 소유 구독 필드까지 제거할 수 있다. 그러므로 다음 상태를 `users`에 새로 넣어 "클라이언트 쓰기만 막으면 안전하다"고 판단하면 안 된다.
+`functions/src/stripe.ts`에는 웹훅이 Admin SDK 병합 쓰기로 구독 등급과 기간을 갱신하는 구현이 있다. 하지만 Functions 진입점 `functions/src/index.ts`는 이 모듈을 export하지 않고 주석으로 남겨 두었고, 패키지의 `main`도 `lib/index.js`다. 그러므로 이 코드는 **서버 전용 필드의 소유 모델을 설명하는 구현**이지만, 현재 Functions 엔트리포인트에서 배포되는 Stripe 함수라고 가정해서는 안 된다. 규칙은 이 상태와 무관하게 클라이언트의 구독 필드 쓰기를 계속 막는다.
 
-- AI 호출 한도는 `aiUsage`에 둔다. 인증 호출은 UID별 문서에서, 비로그인 호출은 IP 해시별 문서와 공용 문서에서 트랜잭션으로 일일 카운터를 먼저 차감한다. 사용자 문서 삭제나 재생성으로 이 비용 경계가 리셋되지 않는다. 자세한 호출 순서는 [AI 호출 경계](ai-call-guard.md)를 따른다.
-- 질문 재생성 한도는 `regenerateCounts/{uid}`에 둔다. 본인은 읽기만 가능하고 `regenerateCardQuestion`이 성공한 모델 응답 뒤 카운터를 기록한다. UI의 실시간 구독은 버튼 표시용이며, 최종 429 판정은 서버 함수가 한다.
-- 사전 생성 완료 여부는 `flashcardPregeneration/{uid}`에 별도 기록한다. 덱 문서가 없는 경우를 "커밋 없음"과 "아직 처리 안 됨"으로 구분해야 하며, 완료 기록은 `saved`, `exists`, `empty`, `unavailable` 결과와 날짜를 보관한다. 사용자 덱 삭제와 독립적이므로 삭제가 완료 기록을 되살리거나 초기화하지 않는다.
-- 비로그인 재생성의 기기 식별자 해시 카운터도 `demoRegenerateCounts`에 둔다.
+## 삭제해도 초기화되지 않아야 하는 카운터
 
-서버 전용 상태의 불변식은 **클라이언트가 읽거나 쓰거나 삭제할 수 없어야 하며, 특히 `users/{uid}`의 삭제로 일일 사용량 또는 서버 작업 완료 상태가 초기화되어서는 안 된다**이다. 신규 서버 전용 컬렉션에는 편의상 본인 `match`를 추가하지 말고, 표시가 필요할 때만 `regenerateCounts`처럼 최소한의 읽기 전용 투영을 따로 설계한다.
+본인 `users/{uid}` 삭제는 탈퇴 흐름을 위해 허용된다. 그래서 일일 한도나 작업 완료 상태를 이 문서에 넣고 “특정 필드를 쓰지 못하게 했으니 안전하다”고 판단하면 안 된다. 문서 전체 삭제 후 재생성이라는 우회가 남기 때문이다.
 
-## 사전 생성과 공개 캐시의 쓰기 주체
+- `aiUsage`는 로그인 호출의 UID별 카운터와 비로그인 호출의 IP 해시별·전역 카운터를 트랜잭션으로 차감한다. 인증 호출의 한도 등급은 `users`의 구독 필드를 읽지만, 차감 상태 자체는 서버 전용 컬렉션에 남는다. 호출 경계의 상세는 [AI 호출 가드](ai-call-guard.md)를 참고한다.
+- `regenerateCounts/{uid}`는 UI가 `onSnapshot`으로 읽어 버튼 상태를 표시하는 읽기 전용 투영이다. `regenerateCardQuestion`이 날짜별 한도를 검사하고 모델 응답을 정상 처리한 뒤 Admin SDK로 기록한다. UI의 `canRegenerate`는 편의 표시이며 최종 제한은 서버의 429 응답이다.
+- 비로그인 재생성은 기기 식별자 해시를 키로 하는 `demoRegenerateCounts`에 별도로 기록한다. 역시 클라이언트는 이 컬렉션에 접근할 수 없다.
 
-사용자 덱은 공유 경로지만 서로 다른 쓰기 주체가 충돌할 수 있다. `scheduleFlashcardPregeneration`은 사용자의 `timezone`, `language`, `repositories`를 읽어 대상 태스크를 만들고, 작업 함수는 이미 덱이 있으면 건너뛴다. 새 덱 저장도 트랜잭션에서 다시 존재 여부를 확인한 뒤 언어 필드만 병합한다. 앱이 먼저 만든 덱을 서버가 덮어쓰지 않도록 하는 순서다. 배경과 재시도 정책은 [플래시카드 사전 생성](../flashcard/pregeneration.md), 덱 크기 제한은 [덱 크기 예산](../flashcard/deck-size-budget.md)을 참고한다.
+이 분리는 `users`를 삭제해도 카운터가 사라지지 않게 한다. 한도가 필요한 새 기능은 `users`에 카운터를 추가하는 대신, 서버 전용 원장과 필요한 최소 읽기 전용 투영을 별도로 설계해야 한다.
 
-반대로 공개 캐시는 클라이언트가 수정할 이유가 없다. `refreshTrendingRepos`가 유효한 수의 Trending 결과일 때만 `meta/trendingRepos`를 교체하고, 데모 카드 사전 생성과 오래된 캐시 삭제를 뒤이어 수행한다. 랜딩은 읽기 실패 또는 캐시 부재 시 대체 경로로 진행한다. 공개 읽기는 데이터 공개 범위이기도 하므로, 개인 저장소 정보·토큰·사용자별 덱을 이 컬렉션에 추가하지 않는다.
+## 일별 덱과 사전 생성의 경합
 
-## 안전한 스키마 변경 절차
+클라이언트는 오늘 문서에서 현재 언어 덱을 먼저 읽고, 다른 언어 덱이 있으면 번역본을 병합해 저장하며, 둘 다 없을 때 생성 결과를 저장한다. 모든 저장은 덱 크기 예산을 적용한다. 동시에 서버의 사전 생성은 `users`에서 시간대·언어·저장소 설정을 읽어 사용자 로컬 새벽에 태스크를 등록한다.
 
-1. **소유자와 삭제 의미부터 정한다.** 새 필드가 사용자 설정이면 `users` 허용 목록과 타입 검증을 함께 바꾸고, 삭제되어도 되는지 확인한다. 사용량·결제 권한·중복 방지·작업 완료 상태면 서버 전용 컬렉션으로 분리한다.
-2. **생성, 갱신, 삭제를 각각 검토한다.** 새 클라이언트 필드는 `create`의 `keys().hasOnly`, `update`의 `affectedKeys`, `isValidUserData` 세 곳을 모두 통과해야 한다. 서버 전용 필드는 클라이언트 갱신에서 영향을 받지 않아야 하고, 사용자 문서 삭제 후에도 유지되어야 하는지 결정한다.
-3. **롤링 배포를 허용한다.** 캐시된 PWA 번들과 새 규칙은 동시에 배포되지 않는다. 기존 유효 표현을 갑자기 금지하지 말고, `updatedAt`처럼 구·신 형식을 제한적으로 함께 받거나 읽기 경로에서 호환한 뒤 충분한 전환 기간 후 정리한다.
-4. **서버와 클라이언트의 쓰기 단위를 맞춘다.** 서버가 같은 `users` 문서에 병합하는 필드가 있으면 클라이언트도 필드 병합을 사용한다. 사용자 덱처럼 경쟁 가능한 문서는 존재 검사와 저장을 트랜잭션으로 묶어야 한다.
-5. **규칙을 데이터 계약으로 검증한다.** 최소한 타인 UID 접근, 허용되지 않은 키의 생성·갱신·삭제, 잘못된 저장소 항목과 경계값, 서버 필드를 가진 기존 문서의 정상 설정 갱신, 사용자 문서 삭제 후 서버 카운터 보존을 에뮬레이터 규칙 테스트로 확인한다.
+덱 문서가 없는 것만으로는 “아직 시도하지 않음”과 “커밋이 없어 만들 카드 없음”을 구분할 수 없다. 따라서 `flashcardPregeneration/{uid}`에는 날짜와 `saved`·`exists`·`empty`·`unavailable` 완료 결과를 기록한다. 스케줄러는 같은 날짜의 완료 기록이 있는 사용자를 건너뛰며, 일시 오류로 결과를 확정하지 못하면 완료 기록 없이 재시도한다.
 
-Firebase 초기화는 클라이언트에서 `getFirestore(app)`만 생성하며 IndexedDB 오프라인 지속성을 명시적으로 켜지 않는다. 여기서 말하는 PWA 호환성은 Firestore 로컬 영속화 설정이 아니라, 서비스 워커가 보존한 이전 JavaScript 번들이 새 규칙과 공존할 수 있다는 배포 호환성 제약이다. GitHub 접근 범위와 토큰의 사용 경로는 [GitHub 접근](../integrations/github-access.md), 푸시 필드의 서버 소비 방식은 [푸시 알림 운영](../operations/push-notifications.md)을 함께 확인한다.
+사용자가 먼저 앱에서 덱을 만들 수 있으므로 작업은 두 번 방어한다. 생성 전 기존 언어 덱이 하나라도 있으면 `exists`로 끝내고, 생성 후 저장 트랜잭션에서도 다시 존재 여부를 확인한다. 트랜잭션이 기존 덱을 보면 쓰지 않아 앱의 결과를 덮어쓰지 않는다. 작업 수명과 재시도는 [플래시카드 사전 생성](../flashcard/pregeneration.md), 문서 크기 제약은 [덱 크기 예산](../flashcard/deck-size-budget.md)을 참고한다.
+
+## 공개 읽기 캐시와 경로 불일치
+
+랜딩은 인증 없이 `meta/trendingRepos`와 `demoFlashcards/{cacheId}`를 읽는다. `refreshTrendingRepos`는 최소 개수에 못 미치는 수집 결과로 기존 Trending 캐시를 덮어쓰지 않고, 유효한 목록을 저장한 뒤 데모 카드를 생성하고 목록에서 빠진 캐시를 정리한다. 클라이언트는 캐시 읽기가 실패하거나 문서가 없으면 대체 생성 경로를 사용할 수 있다. 공개 읽기 컬렉션에는 사용자 설정, 사용자 덱, 접근 자격 증명처럼 공개하면 안 되는 데이터를 넣지 않는다.
+
+규칙은 인증 사용자에게 `notices/{noticeId}` 읽기만 허용한다. 그러나 설정 화면이 구독하는 경로는 `config/notice`다. 이 경로에는 `match`가 없으므로 현 규칙에서는 기본 거부다. 공지 기능을 변경할 때는 클라이언트 경로를 `notices`로 맞추거나, 공개 범위와 인증 요건을 정한 전용 규칙을 `config/notice`에 추가해야 한다.
+
+`deletedUsers/{uid}`도 현재 경계를 그대로 이해해야 한다. 설정 화면은 탈퇴 기록을 만든 후 하위 덱과 사용자 문서를 삭제한다. 로그인 화면은 과거 기록의 삭제를 시도하지만, 규칙은 이 컬렉션에 `delete`를 허용하지 않는다. 따라서 탈퇴 기록의 보존·정리 정책을 바꿀 때는 이 직접 삭제 시도와 규칙을 함께 수정하거나 서버 정리 경로를 마련해야 한다.
+
+## 규칙 또는 스키마 변경 체크리스트
+
+1. **소유자와 삭제 의미를 먼저 정한다.** 사용자 설정이면 `users`의 생성 허용 목록, 갱신 변경 키, 타입 검증을 모두 바꾼다. 한도·결제 권한·중복 방지·완료 상태면 서버 전용 컬렉션으로 분리한다.
+2. **모든 직접 SDK 쓰기를 대조한다.** 설정의 병합 저장·덱 삭제·탈퇴 기록 생성, 로그인 시 사용자 문서 생성/갱신, `useTodayFlashcards`의 덱 병합이 새 규칙과 맞는지 확인한다. 하위 컬렉션 삭제는 부모 문서 삭제와 별개라는 점도 고려한다.
+3. **Admin SDK 쓰기도 대조한다.** 사전 생성의 `users` 읽기와 덱 트랜잭션, 재생성 카운터 기록, AI 사용량 트랜잭션, Trending·데모 캐시 스케줄러를 검토한다. Admin SDK는 규칙 통과 여부로 보호되지 않으므로 서버에서 입력·경합·공개 범위를 보장해야 한다.
+4. **롤링 배포를 허용한다.** PWA 캐시에 남은 이전 번들과 새 규칙이 공존한다. `updatedAt`처럼 이전의 유효 표현이 있는지 확인하고, 호환 기간 없이 타입을 좁히지 않는다.
+5. **에뮬레이터 규칙 테스트를 추가한다.** 현재 저장소에는 Firestore 규칙 전용 테스트 파일이 보이지 않는다. 최소한 타 UID 접근, 허용되지 않은 생성·수정·삭제, 서버 필드를 포함한 기존 문서의 병합 갱신, 공개 캐시의 읽기/쓰기, 사용자 문서 삭제 뒤 서버 카운터 보존을 검증 대상으로 삼는다.
+
+GitHub 접근 자격 증명의 사용 경계는 [GitHub 접근](../integrations/github-access.md), 푸시 설정을 소비하는 서버 작업은 [푸시 알림 운영](../operations/push-notifications.md)을 함께 확인한다.

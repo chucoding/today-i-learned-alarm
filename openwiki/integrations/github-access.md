@@ -1,11 +1,8 @@
 ---
 type: integration-boundary
-title: GitHub 인증과 커밋 조회 경계
-description: GitHub OAuth 토큰을 Firebase 사용자 문서와 서버 프록시를 통해 사용하는 방식, 선택한 저장소와 브랜치의 적용 범위, 로그인·데모·raw URL 조회의 접근 경계를 설명한다.
+title: GitHub 인증과 저장소 접근
+description: GitHub OAuth 토큰과 선택한 저장소 설정이 Firebase ID 토큰 기반 Functions 호출로 이어지는 과정과, 인증된 조회·공개 데모·raw URL 프록시의 접근 경계를 설명한다.
 tags: [github, oauth, firebase, security, repository]
-verified:
-  - by: openwiki/0.7.0
-    at: 2026-10-05T07:59:19.883Z
 sources:
   - id: openwiki-source-f74fb9e99a836f2ffbeec264
     resource: repo://app/src/features/flashcard/lib/demoFlashcards.ts
@@ -31,10 +28,13 @@ sources:
     resource: repo://functions/src/flashcard-pregeneration.ts
   - id: openwiki-source-71672c63e7bcfecc58c67e0e
     resource: repo://functions/src/github.ts
-generated: { by: "openwiki/0.7.0", at: "2026-10-05T07:59:19.883Z" }
+generated: { by: "openwiki/0.7.0", at: "2026-10-18T17:37:30.715Z" }
+verified:
+  - by: openwiki/0.7.0
+    at: 2026-10-18T17:37:30.715Z
 ---
 
-# GitHub 인증과 커밋 조회 경계
+# GitHub 인증과 저장소 접근
 
 이 애플리케이션은 GitHub API를 브라우저에 사용자 OAuth 토큰을 넣어 직접 호출하지 않는다. 로그인 후 토큰은 사용자의 Firestore 문서에 저장되고, 앱은 Firebase ID 토큰만 Cloud Functions 프록시에 보낸다. 함수가 그 ID 토큰의 `uid`로 사용자 문서를 읽어 GitHub 요청에 Bearer 토큰을 붙인다. 따라서 브라우저와 GitHub 사이의 권한 위임은 **Firebase 인증 → 서버의 사용자 토큰 조회 → GitHub API 호출** 순서이며, 앱 API의 공개 URL 자체가 GitHub 권한을 뜻하지는 않는다.
 
@@ -42,23 +42,35 @@ generated: { by: "openwiki/0.7.0", at: "2026-10-05T07:59:19.883Z" }
 
 ```mermaid
 sequenceDiagram
-  participant Browser
-  participant Firebase as Firebase Auth and Firestore
-  participant Proxy as GitHub HTTP function
-  participant GitHub
-  Browser->>Firebase: GitHub popup sign in
-  Firebase-->>Browser: Firebase user and OAuth credential
-  Browser->>Firebase: save token in own users document
-  Browser->>Proxy: endpoint request with Firebase ID token
-  Proxy->>Firebase: verify ID token and read users uid
-  Firebase-->>Proxy: token and selected repositories
-  Proxy->>Proxy: resolve allowed repository
-  Proxy->>GitHub: GitHub API request with user token
-  GitHub-->>Proxy: commits or file content
-  Proxy-->>Browser: JSON response
+  participant Client as 브라우저
+  participant Auth as Firebase Auth
+  participant Store as Firestore
+  participant Fn as GitHub HTTP Function
+  participant Hub as GitHub API
+  Client->>Auth: GitHub 팝업 로그인
+  Auth-->>Client: Firebase 사용자와 GitHub credential
+  Client->>Store: users uid에 GitHub 토큰 저장
+  Client->>Auth: Firebase ID 토큰 발급 요청
+  Auth-->>Client: Firebase ID 토큰
+  Client->>Fn: 저장소 목록 요청과 ID 토큰
+  Fn->>Auth: ID 토큰 검증
+  Fn->>Store: uid의 GitHub 토큰 조회
+  Store-->>Fn: 사용자 GitHub 토큰
+  Fn->>Hub: 사용자 토큰으로 저장소 목록 조회
+  Hub-->>Fn: 접근 가능한 저장소 목록
+  Fn-->>Client: 저장소 목록
+  Client->>Store: 온보딩 또는 설정의 repositories 저장
+  Client->>Fn: 커밋 요청과 ID 토큰
+  Fn->>Auth: ID 토큰 검증
+  Fn->>Store: uid의 토큰과 repositories 조회
+  Store-->>Fn: 사용자 GitHub 토큰과 설정
+  Fn->>Fn: 요청 저장소를 허용 목록으로 해석
+  Fn->>Hub: 사용자 토큰으로 GitHub API 호출
+  Hub-->>Fn: 커밋 데이터
+  Fn-->>Client: JSON 응답
 ```
 
-*로그인 사용자 커밋 조회에서 브라우저는 Firebase ID 토큰만 프록시에 보내고, GitHub OAuth 토큰은 함수가 사용자 문서에서 읽어 외부 API 호출에 사용한다.*
+*로그인으로 토큰을 저장하고, 온보딩·설정에서 저장소를 설정한 뒤, 브라우저가 Firebase ID 토큰으로 Functions를 호출하는 순서를 나타낸다. GitHub OAuth 토큰은 함수 요청 본문이나 헤더로 브라우저에서 다시 전달하지 않는다.*
 
 ## 인증 자료의 수명과 소유자
 
@@ -99,6 +111,8 @@ Firestore 규칙은 본인만 `users/{uid}`를 읽고 쓰게 하며, 클라이�
 선택된 각 저장소에는 선택적으로 브랜치를 저장할 수 있다. 온보딩과 설정은 `/getBranches`로 목록을 채우며, 저장소를 전환하거나 선택 해제한 뒤 도착한 오래된 응답은 무시한다. `getBranches`는 현재 deprecated로 표시되어 있으며, 호출자 인증과 토큰만 확인하고 요청의 `owner`/`repo`가 설정 저장소인지 확인하지 않는다. 이 엔드포인트는 브랜치 이름을 UI에 표시하는 보조 기능으로 취급하고, 새 기능이 이를 권한 검증 수단으로 가정해서는 안 된다.
 
 `getCommits`는 저장된 브랜치가 있으면 GitHub commits API의 `sha`에 사용한다. 호출 쿼리에 비어 있지 않은 `branch`가 있으면 현재 구현은 저장된 브랜치보다 그 값을 우선한다. 이 값은 저장된 브랜치 목록과 대조하지 않는다. 반면 `repositoryFullName`만은 허용 목록과 대조한다. 따라서 현재의 저장소 경계는 강제되지만, 브랜치 고정 경계는 아니다. 특정 브랜치만을 보안 또는 재현성 요구사항으로 강제하려면, 서버에서 요청 브랜치를 저장된 브랜치와 비교해 거부하거나 무시하고, `getMarkdown`에도 동일한 ref를 전달하도록 함께 변경해야 한다.
+
+저장된 브랜치가 없으면 앱의 실시간 생성은 `/getRepositories` 결과의 `default_branch`를 해당 저장소에 채워 넣으려 시도한다. 이 목록 조회가 실패하거나 해당 항목에 기본 브랜치가 없으면 경고만 남기고 `sha` 없이 `getCommits`를 호출한다. 사전 생성은 GitHub 저장소 정보에서 기본 브랜치를 별도로 조회하며, 인증 오류가 아닌 실패는 마찬가지로 `undefined`로 바꾸어 GitHub가 기본 브랜치를 적용하게 한다. 데모도 기본 브랜치 조회 실패 뒤 `sha`를 생략한다. 즉 **기본 브랜치 조회 실패는 그 자체로 카드 생성을 중단시키지 않지만**, 요청은 그 시점 GitHub 기본 브랜치에 의존한다.
 
 `getFilename`은 커밋 SHA로 상세를 읽고, `getMarkdown`은 `/contents/{filename}`을 ref 없이 읽으므로 GitHub 기본 브랜치의 현재 파일을 반환한다. 카드 파일 보기는 가능한 경우 파일 메타데이터의 `raw_url`을 우선 사용하여 커밋 시점 원문을 요청하고, 오래된 카드처럼 raw URL이 없을 때만 `getMarkdown`으로 폴백한다. 그러므로 브랜치와 커밋 시점이 중요한 화면은 raw URL이 있는 메타데이터를 보존해야 한다.
 

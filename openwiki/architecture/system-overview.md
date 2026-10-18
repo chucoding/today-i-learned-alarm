@@ -1,16 +1,20 @@
 ---
 type: system-architecture
-title: 시스템 구성
-description: 랜딩과 인증 앱의 다중 진입점, Firebase Hosting·Cloud Functions·Firestore의 배포 및 권한 경계, 그리고 외부 API와 정기 작업이 연결되는 런타임 구조를 설명한다.
-tags: [architecture, firebase, runtime, deployment]
+title: 시스템 개요와 런타임 경계
+description: React PWA, Firebase Auth·Firestore·Cloud Functions와 스케줄 작업이 연결되는 실행 경계와 데이터 흐름을 설명한다. 외부 GitHub·OpenAI·FCM 호출의 보안·비용 제약 및 Stripe 구현의 배포 상태도 구분한다.
+tags: [architecture, firebase, runtime, pwa, cloud-functions]
 verified:
   - by: openwiki/0.7.0
-    at: 2026-10-05T07:59:19.883Z
+    at: 2026-10-18T17:37:30.715Z
 sources:
   - id: openwiki-source-12b1b6adc0320b33d94219fd
     resource: repo://app/app.html
   - id: openwiki-source-ee3924761df5e544b67bc153
     resource: repo://app/index.html
+  - id: openwiki-source-3e6f4b4f8f3965d2e9e4ed43
+    resource: repo://app/src/main.tsx
+  - id: openwiki-source-585e926792f66437f97353b7
+    resource: repo://app/src/shared/api/apiClient.ts
   - id: openwiki-source-1cc9cef288222413560b8ebf
     resource: repo://app/vite.config.ts
   - id: openwiki-source-e2d36065640e6201821ff884
@@ -19,6 +23,8 @@ sources:
     resource: repo://firestore.rules
   - id: openwiki-source-354704af6b257d0a5d6ce676
     resource: repo://functions/package.json
+  - id: openwiki-source-c4371dcf561815a8869a8951
+    resource: repo://functions/src/ai-guard.ts
   - id: openwiki-source-bcaca72a0469dfd8f568b3ca
     resource: repo://functions/src/flashcard-pregeneration.ts
   - id: openwiki-source-71672c63e7bcfecc58c67e0e
@@ -29,97 +35,90 @@ sources:
     resource: repo://functions/src/openai.ts
   - id: openwiki-source-89ba699eeec5f26ffb1f3f63
     resource: repo://functions/src/schedule.ts
+  - id: openwiki-source-d21d1984cc0c0d8b5a326634
+    resource: repo://functions/src/stripe.ts
   - id: openwiki-source-7b16b1573c8ef4417ee924bc
     resource: repo://functions/src/timezone.ts
+  - id: openwiki-source-667eb5d8c6e8dd4c13cc4171
+    resource: repo://functions/src/translateFlashcards.ts
   - id: openwiki-source-541ae8313cfd3a449526d707
     resource: repo://functions/src/trending.ts
-generated: { by: "openwiki/0.7.0", at: "2026-10-05T07:59:19.883Z" }
+  - id: openwiki-source-5b54a58d1b51cd490b0e7162
+    resource: repo://package.json
+generated: { by: "openwiki/0.7.0", at: "2026-10-18T17:37:30.715Z" }
 ---
 
-# 시스템 구성
+# 시스템 개요와 런타임 경계
 
-CodeRecall은 정적 브라우저 번들(`app`)과 별도 Node.js Functions 번들(`functions`)을 Firebase에 배포한다. 브라우저는 본인 데이터와 공개 캐시를 Firestore 클라이언트 SDK로 읽고 쓸 수 있지만, 외부 API 자격 증명·사용량·백그라운드 완료 상태처럼 클라이언트가 신뢰할 수 없는 일은 HTTP Functions 또는 스케줄 작업의 Admin SDK가 맡는다. 즉, Functions는 단순한 API 프록시가 아니라 **권한 확인, 비용 제어, 외부 연동, 서버 전용 상태 변경**의 경계다.
+CodeRecall은 정적 React PWA와 Firebase Cloud Functions를 분리한다. 브라우저는 Firebase Auth로 사용자를 식별하고 Firestore 규칙이 허용한 본인 데이터 및 공개 캐시만 직접 다룬다. 반대로 GitHub 토큰을 이용한 조회, OpenAI 호출, 사용량·완료 상태 갱신, 전체 사용자 대상 작업은 Functions의 Admin SDK 경로에 둔다. 이 분리는 비밀 값 노출을 막는 것뿐 아니라, 클라이언트가 한도나 완료 기록을 지워 비용·중복 방지 장치를 우회하지 못하게 하는 신뢰 경계다.
 
 ```mermaid
 flowchart LR
-  Browser["브라우저 PWA"]
-  Hosting["Firebase Hosting"]
-  Landing["랜딩 HTML"]
-  App["앱 HTML"]
-  Rules{"Firestore 규칙"}
-  Store[("Firestore")]
-  Http["HTTP Functions"]
-  Jobs["스케줄 및 태스크 Functions"]
-  Scheduler["Cloud Scheduler"]
-  Queue["Cloud Tasks"]
-  GitHub["GitHub API 및 Trending"]
-  OpenAI["OpenAI API"]
-  FCM["Firebase Cloud Messaging"]
-
-  Browser --> Hosting
-  Hosting --> Landing
-  Hosting --> App
-  Browser --> Rules
-  Rules --> Store
-  Browser -->|"CORS HTTP 요청"| Http
-  Http -->|"Admin SDK"| Store
-  Http --> GitHub
-  Http --> OpenAI
-  Scheduler --> Jobs
+  Web["브라우저 PWA"] --> Hosting["Firebase Hosting"]
+  Hosting --> Landing["랜딩 진입점"]
+  Hosting --> App["인증 앱 진입점"]
+  Web --> Auth["Firebase Auth"]
+  Web --> Rules{"Firestore 규칙"}
+  Rules --> Store[("Firestore")]
+  Web -->|"HTTP 요청과 ID 토큰"| Api["HTTP Functions"]
+  Api -->|"Admin SDK"| Store
+  Api --> GitHub["GitHub API"]
+  Api --> OpenAI["OpenAI API"]
+  Scheduler["Cloud Scheduler"] --> Jobs["스케줄 Functions"]
   Jobs -->|"Admin SDK"| Store
-  Jobs --> Queue
-  Queue --> Jobs
-  Jobs --> GitHub
-  Jobs --> OpenAI
-  Jobs --> FCM
-  FCM --> Browser
+  Jobs --> Queue["Cloud Tasks"]
+  Queue --> Worker["사전 생성 태스크"]
+  Worker --> GitHub
+  Worker --> OpenAI
+  Jobs --> FCM["FCM"]
+  FCM --> Web
+  StripeSource["Stripe 핸들러 소스"] -. "현재 export되지 않음" .-> Stripe["Stripe"]
 ```
 
-*브라우저의 규칙 적용 SDK 경로와 Functions의 Admin SDK 경로, 그리고 정기 작업이 외부 서비스와 만나는 지점을 나타낸다.*
+*실제 배포 경로는 실선으로, 구현은 있으나 Functions 진입점에서 내보내지 않아 배포되지 않는 Stripe 경로는 점선으로 나타낸다.*
 
-## 브라우저 진입점과 Hosting 라우팅
+## 웹 진입점과 Hosting 경계
 
-Vite는 `index.html`의 `landing-main.tsx`와 `app.html`의 `main.tsx`를 서로 다른 입력으로 빌드한다. 전자는 랜딩 페이지, React Query, 랜딩 분석을 초기화하고, 후자는 인증 앱과 푸시 서비스 워커를 초기화한다. PWA manifest의 시작 경로도 `/app`이므로 설치형 앱과 랜딩의 진입 의도가 분리되어 있다.
+Vite는 랜딩 `index.html`과 앱 `app.html`을 별도 Rollup 입력으로 빌드한다. 랜딩은 `landing-main.tsx`에서 React Query와 랜딩 화면을, 앱은 `main.tsx`에서 인증 앱과 메시징 서비스 워커를 초기화한다. PWA manifest의 시작 URL은 `/app`이므로 설치형 앱과 마케팅 랜딩의 진입 의도도 분리된다.
 
-Firebase Hosting의 배포 대상은 `app/dist`다. `/app` 및 `/app/**`만 `app.html`로 rewrite하며, `/terms`와 `/privacy`는 각각의 정적 HTML로 보낸다. 따라서 랜딩의 `/`은 별도 SPA fallback이 아니라 Vite가 만든 랜딩 문서를 그대로 제공한다. 라우트나 진입점을 추가할 때는 Vite의 Rollup 입력, 산출 HTML, Hosting rewrite 및 PWA의 `navigateFallback`이 같은 URL 계약을 유지하는지 함께 검토해야 한다.
+Hosting은 `app/dist`를 제공하며 `/app`과 `/app/**`만 `app.html`로 rewrite한다. `/terms`, `/privacy`는 정적 문서로 향하고, `/`은 랜딩 HTML을 그대로 제공한다. 서비스 워커의 `navigateFallback`도 `app.html`이므로, 새 앱 경로를 추가할 때는 Vite 입력·Hosting rewrite·서비스 워커 fallback이 같은 URL 계약을 갖는지 함께 검토해야 한다.
 
-개발 중 `/api`는 모드별 `VITE_FUNCTIONS_URL_LOCAL` 또는 `VITE_FUNCTIONS_URL_PROD`로 프록시되고 접두사는 제거된다. 프로덕션 호출 주소를 바꾸거나 Functions 이름을 바꾸면 브라우저 API 클라이언트와 이 프록시 계약을 함께 갱신해야 한다.
+개발 환경에서 브라우저 API 클라이언트는 `/api`를 사용하고 Vite가 모드별 Functions URL로 프록시하면서 접두사를 제거한다. 프로덕션은 환경 변수의 Functions URL을 직접 사용한다. 브라우저는 현재 Firebase 사용자에게서 ID 토큰을 얻어 `Authorization: Bearer` 헤더에 넣으므로, 함수 이름이나 주소를 변경하면 이 호출 계약도 함께 확인해야 한다.
 
-## 배포 단위와 데이터 권한 경계
+## 배포 단위와 데이터 권한
 
-`firebase.json`은 Hosting, Firestore 규칙, Functions를 한 Firebase 프로젝트 설정으로 묶지만, Functions는 `functions` 코드베이스를 TypeScript로 별도 빌드한 뒤 배포한다. Functions 런타임은 Node.js 22이며 `index.ts`가 Admin 앱을 초기화하고 각 HTTP·스케줄·태스크 트리거를 export한다. 전역 `maxInstances: 10`은 모든 함수에 적용되는 컨테이너 상한이다.
+`firebase.json`은 Hosting, Firestore 규칙, Functions를 한 Firebase 설정으로 묶되, Functions는 별도 TypeScript 산출물을 배포 전 빌드한다. Functions 진입점은 Admin 앱을 초기화하고 전역 `maxInstances: 10`을 설정한다. Node.js 22 런타임의 이 상한은 컨테이너 확장에 따른 비용과 외부 API 부하를 제한하는 공통 제약이며, 태스크 큐의 동시 실행 제한과는 별개다.
 
-브라우저의 Firestore SDK는 규칙을 통과해야 한다. 본인 `users/{uid}` 및 덱은 사용자 소유 데이터이고, 랜딩에 필요한 `meta/trendingRepos`와 `demoFlashcards`는 공개 읽기 캐시다. 반면 `aiUsage`, `flashcardPregeneration` 등은 클라이언트용 규칙이 없어 기본 거부되며, Admin SDK가 이들을 읽고 쓴다. Admin SDK는 규칙을 우회하므로 서버 코드에서 UID, 입력, 쓰기 대상을 명시적으로 검증하지 않고 클라이언트 규칙에만 의존해서는 안 된다. 컬렉션별 계약은 [Firestore 데이터 경계](firestore-data-boundary.md)를 따른다.
+Firestore 클라이언트 SDK는 규칙을 통과해야 한다. `users/{uid}`와 그 카드 하위 컬렉션은 소유자만 접근하며, 사용자 문서에서 클라이언트가 바꿀 수 있는 필드와 형태도 제한한다. 반면 랜딩이 쓰는 `meta/trendingRepos`와 `demoFlashcards`는 비로그인도 읽을 수 있는 서버 작성 캐시다. `aiUsage`, `flashcardPregeneration`처럼 한도·중복 방지에 쓰이는 상태에는 클라이언트 규칙이 없어 기본 거부된다. Admin SDK는 이 규칙을 우회하므로 함수는 UID, 입력 및 쓰기 대상을 직접 검증해야 한다. 세부 컬렉션 계약은 [Firestore 데이터 경계](firestore-data-boundary.md)를 참고한다.
 
-HTTP Functions 중 일부는 CORS preflight와 랜딩 데모를 위해 `invoker: "public"`이다. 이것은 누구나 URL에 도달할 수 있다는 뜻이지 개인 데이터 접근을 허용한다는 뜻이 아니다. GitHub 경로는 Firebase ID 토큰을 Admin Auth로 검증한 뒤 해당 사용자의 `users/{uid}` 설정에서 저장소와 GitHub 토큰을 읽는다. 공개 AI 경로는 모델 호출 전에 서버 전용 Firestore 카운터를 트랜잭션으로 차감한다. 공개 URL을 숨기는 대신 인증·입력 검증·한도를 서버에서 강제하는 이유와 세부 한도는 [공개 AI 함수 호출 경계](ai-call-guard.md)를 참고한다.
+## 요청 경로: 인증, 외부 제공자, 비용 제어
 
-## 외부 서비스의 책임
+HTTP 함수의 `invoker: "public"`과 CORS는 URL 도달 및 브라우저 preflight를 허용할 뿐, 사용자 권한을 부여하지 않는다. GitHub 함수는 Firebase ID 토큰을 검증한 뒤 해당 UID의 Firestore 설정에서 GitHub 토큰과 허용된 저장소를 읽어 GitHub API를 호출한다. 따라서 공개 함수 URL만으로 다른 사용자의 저장소를 지정해 읽는 경로는 허용되지 않는다. 파일 원문 조회의 비로그인 경로는 GitHub 호스트만 허용하고, 토큰이 없으면 공개 리소스에만 의존한다. 상세한 접근 계약은 [GitHub 접근](../integrations/github-access.md)을 참고한다.
 
-| 외부 서비스 | Functions가 맡는 일 | 브라우저가 직접 맡지 않는 이유 |
+랜딩 데모를 위해 OpenAI 관련 HTTP 함수 일부도 공개되어 있다. 다만 모델 호출 전 서버 전용 `aiUsage` 카운터를 Firestore 트랜잭션으로 차감한다. 로그인 호출은 검증된 UID와 등급 기준 한도를, 비로그인 호출은 IP 해시 기준 한도와 별도의 전역 일일 상한을 함께 적용한다. IP 헤더는 단독 식별 경계가 될 수 없으므로 전역 카운터가 비용의 최종 상한 역할을 한다. 번역 경로는 카드 수와 프롬프트 길이도 거부형 상한으로 제한한다. 이 가드의 한계와 변경 주의점은 [공개 AI 함수 호출 경계](ai-call-guard.md)를 참고한다.
+
+GitHub Trending은 브라우저가 외부 HTML을 직접 읽지 않고 공개 Firestore 캐시를 읽는다. `refreshTrendingRepos`는 매일 09:00 KST에 `asia-northeast3`에서 Trending 상위 10개를 수집한다. 파싱 결과가 5개 미만이면 기존 캐시를 보존하며, 목록 저장 후 데모 카드 사전 생성 또는 오래된 카드 정리에 실패해도 목록 캐시를 되돌리지 않는다. 따라서 외부 HTML 구조나 모델 호출 실패가 랜딩의 마지막 정상 목록을 즉시 지우지 않는다.
+
+## 스케줄러, 태스크 및 사용자 시간대
+
+| 작업 | 실행 경계 | 실패·부하 제어 |
 | --- | --- | --- |
-| GitHub API | ID 토큰으로 사용자 설정을 확인한 뒤, 사용자 GitHub 토큰으로 커밋·파일·저장소 정보를 조회한다. 매일 Trending HTML도 서버에서 수집한다. | 개인 토큰을 요청마다 노출하지 않고, Trending은 브라우저 CORS로 직접 읽을 수 없다. |
-| OpenAI API | 카드 생성·번역·재생성 및 사전 생성에 모델을 호출한다. 공개 호출은 서버 전용 사용량 계수와 입력 경계를 거친다. | API 키와 비용 한도, 모델 입력 정책을 신뢰할 수 있는 서버에 둔다. |
-| Firebase Cloud Messaging | 정기 작업이 조건에 맞는 FCM 토큰을 묶어 리마인더를 전송한다. 앱은 서비스 워커를 등록해 수신 기반을 만든다. | 전송 권한과 전체 사용자 토큰 조회는 클라이언트에 둘 수 없다. |
+| `sendDaily8amPush` | 매시 `asia-northeast3`에서 실행하고, 각 사용자 IANA 시간대의 현지 시와 선호 시각이 일치할 때 FCM을 보낸다. 알림 클릭 데이터는 `/app`을 가리킨다. | FCM 토큰은 500개씩 보낸다. 전송 오류는 기록하지만 작업 전체 오류를 다시 던지지는 않는다. |
+| `scheduleFlashcardPregeneration` | 매시 실행하여 현지 0시 이상 6시 미만이고 최근 활동한 사용자만 고르고, 사용자별 Cloud Tasks를 넣는다. | 같은 시각의 태스크 ID는 중복 등록을 막고, 등록 실패가 있으면 예외로 Scheduler 재시도를 유도한다. |
+| `pregenerateUserFlashcards` | 큐가 사용자별 GitHub 커밋 조회와 OpenAI 카드 생성을 수행한 뒤 해당 날짜 덱을 저장한다. | 최대 동시 디스패치는 5, 최대 시도는 3회다. 한 태스크 안의 병렬 모델 호출까지 고려한 속도·비용 경계다. |
+| `refreshTrendingRepos` | 매일 09:00 KST에 공개 Trending·데모 캐시를 갱신한다. | 실행 시간과 메모리 설정을 별도로 늘려 목록과 데모 생성의 긴 경로를 수용한다. |
 
-랜딩의 Trending은 외부 GitHub를 실시간으로 조회하지 않고 Firestore 공개 캐시를 읽는다. `refreshTrendingRepos`는 하루 한 번 상위 10개를 파싱하되 5개 미만이면 이전 캐시를 보존한다. 목록 저장 뒤 데모 카드 사전 생성 또는 오래된 카드 정리가 실패해도 이미 저장한 목록 캐시는 유지된다. 이 분리는 랜딩 가용성을 외부 HTML 구조 및 모델 호출 실패와 분리한다.
+스케줄러의 기준 시간대만으로 사용자 현지 날짜를 정하지 않는다. 푸시와 사전 생성은 `Intl.DateTimeFormat`으로 각 사용자의 IANA 시간대를 해석한다. 사전 생성 후보는 유효하지 않은 시간대, 언어 또는 저장소 설정이 없으면 제외한다. 이 방식은 모든 시간대를 매시 확인하는 비용을 감수하는 대신, 기기와 서버가 같은 사용자 날짜 키 및 커밋 조회 범위를 사용하게 한다.
 
-## 정기 작업과 사전 생성 수명
+사전 생성은 후보 선정과 무거운 생성을 분리한다. 완료 기록은 서버 전용 `flashcardPregeneration`에 남겨 ‘커밋이 없어 빈 덱’과 ‘아직 실행하지 않음’을 구별한다. 태스크는 기존 덱을 먼저 확인하고, 저장 트랜잭션에서 다시 확인한다. 그러므로 자정 직후 앱이 먼저 생성한 덱을 서버가 덮어쓰지 않는다. GitHub 인증 문제처럼 재시도로 해결되지 않는 상태, 실제 커밋 없음, 저장 성공은 완료로 기록한다. 반대로 일부 생성 오류 때문에 빈 덱이 되면 완료로 기록하지 않고 태스크 재시도 및 다음 새벽 시간대의 재등록 여지를 남긴다. 사용자 생성과의 관계는 [플래시카드 생성 경로](../flashcard/generation-paths.md), 큐 세부 사항은 [사전 생성](../flashcard/pregeneration.md)을 참고한다.
 
-| 작업 | 시간·리전 | 책임과 실패 의미 |
-| --- | --- | --- |
-| `sendDaily8amPush` | 매시 정각, `asia-northeast3` | `pushEnabled` 사용자를 읽고 각 사용자의 시간대 현지 시가 선호 시각과 같을 때 FCM을 보낸다. 토큰은 500개씩 전송하며, 전체 작업 오류는 로그로 남긴다. |
-| `scheduleFlashcardPregeneration` | 매시 정각, `asia-northeast3` | 사용자 현지 0시부터 6시 사이의 최근 활동 사용자만 골라 Cloud Tasks에 사용자별 덱 생성 작업을 넣는다. 등록 실패가 하나라도 있으면 스케줄러 재시도를 위해 예외를 던진다. |
-| `pregenerateUserFlashcards` | 태스크 큐, `asia-northeast3` | GitHub 커밋과 OpenAI 생성 결과로 날짜별 사용자 덱을 저장한다. 최대 동시 디스패치는 5이며 최대 3회 시도한다. |
-| `refreshTrendingRepos` | 매일 09:00 KST, `asia-northeast3` | GitHub Trending 캐시와 랜딩 데모 카드를 갱신한다. 실행 제한은 540초, 메모리는 512MiB다. |
-| `cleanupDeletedUsers` | 매일 12:00 KST, `asia-northeast3` | `deletedUsers`에서 KST 기준 당일 기록만 남기고 이전 기록을 배치 삭제한다. |
+## Stripe: 구현 의도와 현재 런타임 상태
 
-시간대별 작업은 Scheduler의 기준 시간대만으로 사용자 현지 시간을 표현하지 않는다. 푸시와 덱 사전 생성 모두 매시 실행한 뒤 `Intl` 기반 사용자 IANA 시간대에서 시각과 날짜를 계산한다. 이 때문에 모든 시간대를 하루 24회로 훑을 수 있으며, 잘못된 시간대 값은 사전 생성 대상에서 제외된다.
+`functions/src/stripe.ts`에는 인증된 사용자의 Checkout 세션 생성과 서명 검증 웹훅이 구현되어 있다. 웹훅의 의도는 구독 이벤트에 따라 사용자 문서의 구독 등급 및 기간 상태를 Admin SDK로 갱신하는 것이다. 그러나 `functions/src/index.ts`는 이 모듈의 export를 주석 처리했다. 따라서 이 저장소의 현재 Functions 배포 진입점에는 Checkout 및 웹훅 HTTP 핸들러가 **포함되지 않는다**. 프런트엔드의 결제 복귀 UI나 Firestore 규칙의 서버 전용 구독 필드만으로 Stripe 런타임이 활성화됐다고 가정해서는 안 된다. 활성화하려면 export뿐 아니라 서명 검증, 허용된 반환 URL 정책, 환경 설정 및 엔드투엔드 이벤트 검증을 함께 준비해야 한다.
 
-사전 생성은 스케줄러가 모델 작업을 직접 수행하지 않도록 두 단계로 분리한다. 스케줄러는 후보 선정·완료 기록 조회·큐 등록만 하고, 태스크가 한 사용자의 저장소와 복습 날짜를 처리한다. 완료 기록은 서버 전용 `flashcardPregeneration`에 날짜와 결과를 남기며, 같은 시각의 재등록은 `uid-날짜-시` 태스크 ID로 중복을 막는다. 덱이 이미 있으면 건너뛰고, 저장 시에도 트랜잭션에서 다시 확인해 자정 직후 앱이 먼저 저장한 덱을 덮어쓰지 않는다. 일시 실패는 완료로 기록하지 않아 태스크 재시도 또는 새벽 다음 시각에 다시 시도할 수 있다. 전체 흐름은 [플래시카드 생성 경로](../flashcard/generation-paths.md)와 [사전 생성](../flashcard/pregeneration.md)을 참고한다.
+## 변경·운영 확인
 
-## 변경 시 영향 범위와 검증
-
-- **리전 변경:** HTTP 함수, Scheduler, 태스크 큐 경로가 모두 `asia-northeast3`를 전제로 한다. 특히 사전 생성 큐 이름에는 `locations/${REGION}/functions/pregenerateUserFlashcards`가 들어가므로, 트리거만 다른 리전으로 옮기면 큐 연결이 끊어진다. 브라우저가 리전 포함 Functions URL을 구성한다면 환경 변수도 함께 확인한다.
-- **동시성·용량 변경:** 전역 `maxInstances: 10`과 태스크의 `maxConcurrentDispatches: 5`는 별개 제약이다. 후자는 한 태스크가 최대 15개의 AI 호출을 병렬화하는 전제에서 OpenAI 속도 제한을 보호한다. 값을 높이면 생성 지연은 줄 수 있지만 모델 호출량, Firestore 부하 및 전역 컨테이너 상한과 함께 평가해야 한다.
-- **규칙 또는 컬렉션 변경:** 공개 읽기 캐시에 개인 데이터나 토큰을 넣지 말고, 비용·중복 방지·완료 상태는 클라이언트가 삭제 가능한 사용자 문서가 아닌 서버 전용 컬렉션에 둔다. Admin SDK 쓰기는 규칙 테스트만으로 보장되지 않으므로 함수의 인증과 소유권 검증도 확인한다.
-- **대표 검증:** 이 저장소에는 앱 또는 Functions의 전용 테스트 파일이 없다. 변경 전후에는 `pnpm --filter app build`, `pnpm --filter functions build`로 두 빌드 단위를 각각 확인하고, Hosting rewrite와 `/api` 프록시, 공개 캐시의 비로그인 읽기, ID 토큰이 필요한 GitHub 호출, 스케줄러의 재시도·중복 덱 방지 경로를 Emulator 또는 배포 환경에서 점검한다.
+- **리전 변경:** HTTP 함수, Scheduler, 태스크 함수 및 `locations/${REGION}/functions/pregenerateUserFlashcards` 큐 경로는 모두 `asia-northeast3` 계약에 연결된다. 일부만 옮기면 큐가 다른 함수를 가리키거나 브라우저의 Functions URL과 불일치할 수 있다.
+- **용량 변경:** 전역 `maxInstances`와 태스크의 `maxConcurrentDispatches`를 함께 평가한다. 후자만 올려도 사용자별 병렬 GitHub·OpenAI 요청량이 늘어나며, 전자를 올려도 외부 제공자의 속도 제한은 자동으로 완화되지 않는다.
+- **권한 변경:** 공개 캐시에 개인 토큰·사용량 상태를 넣지 않는다. 서버 전용 컬렉션을 규칙으로 열면 사용자가 비용 한도나 완료 기록을 변경할 수 있으므로, 필요한 표시 전용 데이터만 별도로 읽기 허용한다.
+- **검증:** 이 저장소의 빌드 경계는 `pnpm --filter app build` 및 `pnpm --filter functions build`이다. 변경 시 두 빌드 뒤 Hosting의 `/app` rewrite, 비로그인 공개 캐시 읽기, ID 토큰이 필요한 GitHub 요청, AI 한도 초과 응답, 사전 생성의 중복 덱 방지와 태스크 재시도를 Emulator 또는 배포 환경에서 확인한다. 로컬 실행과 배포 절차는 [로컬 개발 및 배포](../operations/local-development-and-deployment.md), 수신 측 푸시 설정은 [푸시 알림](../operations/push-notifications.md)을 참고한다.

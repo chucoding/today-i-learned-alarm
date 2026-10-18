@@ -1,18 +1,23 @@
 ---
 type: generation-flow
-title: 카드 생성 경로
-description: 즉시 생성, 사용자별 사전 생성, 랜딩 데모 캐시가 GitHub 변경을 카드 덱으로 만들고 저장하는 공통 단계와 각 경로의 분기·후속 번역·질문 재생성을 설명한다.
+title: 플래시카드 생성과 복구 경로
+description: 오늘의 언어별 덱을 우선 읽고 번역 또는 즉석 생성으로 복구하는 사용자 경로와, 사용자·랜딩 사전 생성 및 질문 재생성의 저장·실패 경계를 설명한다.
 tags: [flashcard, generation, github, openai, firestore]
-verified:
-  - by: openwiki/0.7.0
-    at: 2026-10-05T07:59:19.883Z
 sources:
+  - id: openwiki-source-6a1f26bbf1befe09d5589480
+    resource: repo://app/src/features/ai-generation/api/openaiApi.ts
+  - id: openwiki-source-b6c6ae2bb90c52a9539e872d
+    resource: repo://app/src/features/flashcard/FlashCardPlayer.tsx
   - id: openwiki-source-43482a23192c1b4cd832a0a3
     resource: repo://app/src/features/flashcard/lib/deck-size.ts
   - id: openwiki-source-c33b33487dc43a2b94fbff20
     resource: repo://app/src/features/flashcard/model/use-demo-flashcards.ts
   - id: openwiki-source-38581190ff5761f7869b5cfa
     resource: repo://app/src/features/flashcard/model/useTodayFlashcards.ts
+  - id: openwiki-source-714d9e0b4dacd4bea7740fea
+    resource: repo://app/src/features/github-sync/api/githubApi.ts
+  - id: openwiki-source-160da25a44dc70741e18b505
+    resource: repo://app/src/features/subscription/model/use-regenerate-quota.ts
   - id: openwiki-source-160c92eb52fdd31b0ea9d6a9
     resource: repo://app/src/pages/FlashCardViewer.tsx
   - id: openwiki-source-f9502e5a567f58ff0bf3a756
@@ -35,121 +40,112 @@ sources:
     resource: repo://functions/src/translateFlashcards.ts
   - id: openwiki-source-541ae8313cfd3a449526d707
     resource: repo://functions/src/trending.ts
-generated: { by: "openwiki/0.7.0", at: "2026-10-05T07:59:19.883Z" }
+generated: { by: "openwiki/0.7.0", at: "2026-10-18T17:37:30.715Z" }
+verified:
+  - by: openwiki/0.7.0
+    at: 2026-10-18T17:37:30.715Z
 ---
 
-사용자 날짜 덱과 랜딩 데모는 모두 GitHub 커밋을 질문·답변 카드로 바꾸지만, **누가 언제 생성하고 어디에 보관하는지**가 다르다. 로그인 앱은 이미 저장된 언어별 덱을 우선 읽고, 없으면 반대 언어 덱을 번역하며, 그것도 없을 때만 즉시 생성한다. 서버는 같은 사용자 덱을 새벽에 미리 채울 수 있고, 랜딩은 Trending 저장소의 별도 공개 캐시를 먼저 읽는다. 데이터 소유권과 읽기 권한은 [Firestore 데이터 경계](../architecture/firestore-data-boundary.md)를 참고한다.
+로그인 사용자의 오늘 카드와 랜딩 데모는 모두 GitHub 커밋을 질문·답변 카드로 바꾸지만, **캐시 우선순위·실행 주체·저장소**가 다르다. 사용자 화면은 날짜 문서의 현재 언어 덱을 먼저 읽고, 없으면 반대 언어 덱을 번역해 채우며, 둘 다 없을 때만 커밋과 AI를 호출한다. 랜딩은 Trending 기반의 공개 데모 캐시를 먼저 읽는다. 사용자 문서와 공개 캐시의 읽기·쓰기 경계는 [Firestore 데이터 경계](../architecture/firestore-data-boundary.md)를 참고한다.
 
-## 세 생성 경로와 저장소
+## 오늘 덱의 복구 순서
 
-| 경로 | 진입점과 시점 | 커밋 선택 | 저장 지점과 소비자 |
-|---|---|---|---|
-| 앱 즉시 생성 | `useTodayFlashcards`가 오늘 문서와 반대 언어 덱 모두 없을 때 | 선택 저장소별로 Free는 1·7일 전, Pro는 1·7·30일 전의 첫 변경 포함 커밋 | `users/{uid}/flashcards/{YYYY-MM-DD}`의 `data_ko` 또는 `data_en`; 앱이 이후 같은 언어 덱을 읽음 |
-| 사용자별 사전 생성 | `scheduleFlashcardPregeneration`이 로컬 0–6시의 최근 활동 사용자를 Cloud Tasks에 넣고 `pregenerateUserFlashcards`가 처리 | 즉시 생성과 같은 저장소 × 복습 간격 및 날짜 범위 | 같은 날짜 문서의 해당 언어 필드; 앱 즉시 생성보다 먼저 준비하는 경로 |
-| 랜딩 데모 캐시 | 매일 09:00 KST `refreshTrendingRepos`가 유효한 Trending 목록을 저장한 뒤 `pregenerateDemoFlashcards` 호출 | 기본 브랜치의 최근 3개 커밋 | `demoFlashcards/{owner}__{repo}__{lang}`; 비로그인 랜딩이 먼저 읽음 |
+`useTodayFlashcards`는 사용자 저장소가 없으면 즉시 빈 상태로 끝낸다. 저장소가 있으면 현재 표시 언어를 `ko` 또는 `en`으로 정하고, 시간대와 언어를 사용자 문서에 best-effort로 기록한다. 이 설정은 사용자별 사전 생성의 날짜와 언어 입력이다.
 
 ```mermaid
 flowchart TD
-  App["앱 오늘 덱 요청"] --> ReadDeck{"현재 언어 덱 존재"}
-  ReadDeck -->|"예"| UserStore["사용자 날짜 덱"]
-  ReadDeck -->|"아니오"| OtherDeck{"반대 언어 덱 존재"}
-  OtherDeck -->|"예"| Translate["translateFlashcards"]
-  Translate --> Fit["예산 축소 후 data 언어 병합 저장"]
-  OtherDeck -->|"아니오"| Instant["앱 즉시 생성"]
-  Scheduler["매시 스케줄러와 Cloud Tasks"] --> PreGen["사용자별 사전 생성"]
-  Instant --> GitUser["GitHub 커밋 목록과 상세"]
-  PreGen --> GitUser
-  GitUser --> Diff["formatCommitDiff"]
-  Diff --> Generate["구조화 OpenAI 카드 생성"]
-  Generate --> Fit
-  Trending["09시 KST Trending 갱신"] --> DemoGen["랜딩 데모 사전 생성"]
-  DemoGen --> GitDemo["기본 브랜치 최근 3개 커밋"]
-  GitDemo --> DemoPrompt["커밋 요약과 patch 미리보기"]
-  DemoPrompt --> Generate
-  Generate --> DemoStore["demoFlashcards 언어별 캐시"]
-  DemoStore --> Landing["랜딩 캐시 읽기"]
-  Landing --> CacheMiss{"캐시 사용 가능"}
-  CacheMiss -->|"아니오"| DemoFallback["브라우저 즉시 생성"]
+  Begin["오늘 덱 요청"] --> Repos{"선택 저장소가 있는가"}
+  Repos -->|"아니오"| Empty["빈 상태"]
+  Repos -->|"예"| Current{"현재 언어 덱이 있는가"}
+  Current -->|"예"| Read["저장된 현재 언어 덱 표시"]
+  Current -->|"아니오"| Other{"반대 언어 덱이 있는가"}
+  Other -->|"예"| Translate["질문과 답변 배치 번역"]
+  Translate --> Translated{"번역 카드가 있는가"}
+  Translated -->|"예"| Merge["예산 축소 후 data 언어 병합 저장"]
+  Translated -->|"아니오 또는 오류"| Empty
+  Other -->|"아니오"| Instant["저장소와 복습 날짜별 즉석 생성"]
+  Instant --> Created{"카드가 있는가"}
+  Created -->|"예"| Merge
+  Created -->|"아니오 또는 오류"| Empty
+  Trending["09시 KST Trending 갱신"] --> DemoBuild["언어별 데모 캐시 사전 생성"]
+  DemoBuild --> DemoCache["demoFlashcards"]
+  Landing["랜딩 데모 요청"] --> Branch{"명시적 브랜치인가"}
+  Branch -->|"아니오"| CacheRead{"공개 캐시가 있는가"}
+  CacheRead -->|"예"| DemoCache
+  CacheRead -->|"아니오 또는 읽기 실패"| DemoInstant["브라우저 즉석 생성"]
+  Branch -->|"예"| DemoInstant
 ```
 
-*세 경로의 공통 모델 호출과 두 Firestore 저장 지점, 그리고 앱·랜딩의 캐시 우선 분기를 보여 준다.*
+*저장된 현재 언어 덱, 반대 언어 번역, 즉석 생성, 빈 결과와 랜딩 데모 fallback의 우선순위다.*
 
-### 앱 즉시 생성과 언어 우선순위
+1. 현재 언어의 `data_ko` 또는 `data_en` 배열이 비어 있지 않으면 생성하지 않는다. 기존 카드에 브랜치가 빠진 경우에만 기본 브랜치를 알아내어 같은 언어 필드를 보강 저장한다.
+2. 현재 언어가 없고 반대 언어 덱이 있으면 `translateFlashcards`를 호출한다. GitHub을 다시 읽거나 카드를 새로 생성하지 않으며, 번역된 덱을 남은 문서 예산 안으로 줄여 현재 언어 필드에 병합한다.
+3. 두 언어 덱 모두 없을 때만 Free는 1일·7일 전, Pro는 1일·7일·30일 전의 날짜를 저장소별로 순서대로 조사한다. 각 조합에서 변경 파일이 있는 첫 커밋을 골라 diff를 AI에 보내며, 한 조합의 실패는 로그만 남기고 다음 조합을 계속한다.
+4. 결과 카드가 하나 이상일 때만 축소 후 저장한다. 번역 결과 또는 생성 결과가 비었거나 최상위 작업이 실패하면 날짜 키를 설정하지 않고 화면은 빈 상태가 된다.
 
-`useTodayFlashcards`는 `users/{uid}`에서 선택 저장소를 읽고, 브라우저의 IANA 시간대와 현재 표시 언어를 사용자 문서에 best-effort로 동기화한다. 이 값은 서버가 사전 생성을 할 날짜와 언어를 정하는 입력이다. 오늘 날짜 문서에서는 다음 순서가 중요하다.
+공개 `openaiChatCompletions`는 입력을 검증하고 호출량을 먼저 차감한 뒤 모델 호출을 수행한다. 호출 한도와 선차감의 실패 의미는 [공개 AI 함수 호출 경계](../architecture/ai-call-guard.md)에 있다.
 
-1. 현재 언어 배열이 비어 있지 않으면 생성하지 않는다. 브랜치가 없는 기존 카드에는 기본 브랜치를 보강해 병합 저장할 수 있다.
-2. 현재 언어가 없고 반대 언어 덱이 있으면 새 GitHub 조회나 카드 생성 대신 `translateFlashcards`를 호출한다. 번역은 질문·답변만 바꾸고 `highlights`와 `metadata`는 원본 카드에서 유지한다.
-3. 두 언어 덱 모두 없을 때에만 저장소와 복습 날짜를 순차로 조회한다. 각 조합에서 파일 변경이 있는 첫 커밋의 diff를 만들고 `openaiChatCompletions`로 보낸다. 조합 하나의 오류는 로그만 남기고 다음 조합을 계속한다.
-4. 카드가 하나 이상이면 덱 크기를 축소한 뒤 해당 `data_{lang}`만 `merge` 저장한다. 카드가 없거나 최상위 흐름이 실패하면 오늘 덱 없음 상태가 된다.
+## 카드 및 날짜 덱 계약
 
-공개 HTTP 함수 `openaiChatCompletions`는 `text`를 검증한 뒤 호출량 제한을 차감하고 공용 생성 함수를 호출한다. 공개 함수의 한도·입력 상한·선차감 실패 의미는 [공개 AI 함수 호출 경계](../architecture/ai-call-guard.md)에 있다.
+날짜 문서 `users/{uid}/flashcards/{YYYY-MM-DD}`에는 두 독립 언어 필드 `data_ko`, `data_en`가 공존한다. 카드의 필수 본문은 `question`, `answer`이고, 선택 `highlights`와 `metadata`를 갖는다. `metadata`에는 커밋 메시지, `rawDiff`, 변경 파일, 저장소 전체 이름, 브랜치가 들어갈 수 있다. `rawDiff`는 diff 보기와 질문 재생성의 입력이며, 이를 저장 예산 때문에 제거하면 재생성 제어도 나타나지 않는다.
 
-### 사용자별 사전 생성: 즉시 생성과의 경쟁
+앱과 Functions는 별도 패키지이므로 다음 계약을 복제한다.
 
-사전 생성은 앱의 첫 화면 대기를 줄이는 보완 경로이지, 별도 덱 모델이 아니다. 매시 스케줄러는 언어·유효한 시간대·저장소가 있는 사용자 가운데 최근 7일 활동했고 현지 시각이 0–6시이며 아직 그 날짜를 완료하지 않은 사용자만 태스크로 등록한다. 작업은 저장소 × 복습 날짜를 병렬로 생성하지만, 덱의 순서는 저장소, 날짜 순서를 유지한다.
+| 계약 | 동작과 변경 시 주의 |
+|---|---|
+| 복습 범위 | 앱 즉석 생성과 서버 사전 생성은 Free `[1, 7]`, Pro `[1, 7, 30]`을 사용한다. |
+| 크기 예산 | 한 날짜 문서의 안전 상한은 900,000 bytes, 언어 덱 기본 예산은 450,000 bytes다. 두 언어가 한 문서에 있으므로 번역 경로는 반대 언어 덱 크기를 뺀 더 작은 예산을 쓴다. |
+| 축소 방식 | `rawDiff`를 최대 30,000자에서 단계적으로 줄이고, 파일 목록은 최대 20개로 줄이며, 그래도 넘으면 diff 없이 저장한다. |
+| 데모 캐시 ID | 공개 캐시는 `owner__repo__lang` 문서 ID를 앱과 Functions가 함께 사용한다. |
 
-작업은 먼저 오늘 문서에 어느 언어든 비어 있지 않은 덱이 있는지 확인하고, 생성 뒤에도 Firestore 트랜잭션에서 다시 확인한다. 따라서 앱이 자정 직후 먼저 저장하면 서버는 덮어쓰지 않는다. `flashcardPregeneration/{uid}`의 서버 전용 완료 기록은 `saved`, `exists`, `empty`, `unavailable`을 구분한다. GitHub 토큰 무효와 설정 누락은 `unavailable`으로 끝내지만, 일시 오류 또는 일부 실패 때문에 빈 덱이 된 경우에는 완료를 기록하지 않고 재시도한다. 스케줄·재시도·완료 기록의 세부 사항은 [오늘의 플래시카드 사전 생성](pregeneration.md)에 있다.
+크기와 축소의 세부 계약은 [덱 문서 크기 예산](deck-size-budget.md)을 따른다. 이 표의 타입·날짜·상한을 한쪽만 바꾸면 언어 전환, 앱 즉석 생성, 서버 사전 생성이 같은 문서를 서로 다르게 해석한다.
 
-### 랜딩 데모 캐시와 캐시 미스
+## 즉석 생성과 사전 생성
 
-Trending 수집 결과가 5개 미만이면 목록과 카드 캐시를 갱신하지 않는다. 충분한 목록이면 먼저 `meta/trendingRepos`를 갱신하고, 데모 카드 생성 실패는 목록 갱신을 되돌리지 않는다. 저장소는 순차 처리해 OpenAI 속도 제한을 피하고, 한 저장소 안의 커밋은 병렬로 생성한다. 한국어와 영어 각각에 대해 커밋당 첫 카드 한 장만 보관한다.
+두 경로는 **저장소와 복습 날짜에서 커밋 목록을 찾고, 상세 커밋에서 diff를 만들고, 구조화 AI 출력으로 카드를 만든다**는 같은 논리 단계를 따른다. 다만 앱 즉석 생성은 브라우저가 GitHub HTTP 함수와 `openaiChatCompletions`를 차례로 호출해 날짜를 브라우저 시간으로 계산하고, 생성 완료 후에만 직접 Firestore에 저장한다. 서버 사전 생성은 Functions 안에서 `flashcard-generation.ts`의 GitHub 조회·diff 구성·AI 생성 공용 함수를 사용하고 사용자 시간대 날짜를 계산한다. 즉 AI 생성 계약은 공통이지만, 실행 위치와 GitHub 호출 경계, 날짜 계산, 병렬성, 저장 시점은 같지 않다.
 
-데모 캐시는 파일을 최대 10개, 각 patch를 최대 4,000자로 제한하고 JSON UTF-8 크기가 900,000 bytes를 넘으면 저장하지 않는다. 이번 Trending 목록에 없는 언어별 캐시는 뒤이어 삭제한다. 랜딩은 기본 브랜치 요청일 때만 이 캐시를 조회하며, 캐시가 없거나 읽기 실패하거나 사용자가 `@branch`를 지정하면 브라우저의 `generateDemoFlashcards`로 넘어간다. 이 fallback은 GitHub Public API와 `openaiChatCompletions`를 직접 사용하고 Firestore에는 쓰지 않는다.
-
-## 공통 생성 계약과 경로별 차이
-
-`functions/src/flashcard-generation.ts`는 서버 즉시 생성과 두 서버 사전 생성이 공유하는 GitHub·모델 경계다. 토큰이 있으면 GitHub Bearer 인증으로, 없으면 데모 User-Agent로 공개 저장소를 읽는다. 401은 `GitHubAuthError`로 구분하며 기본 브랜치 조회만 일반 오류를 기록하고 브랜치 없이 계속한다. 커밋 목록에는 파일 diff가 없으므로 카드용 원문은 상세 조회 뒤에 구성한다.
-
-| 단계 | 공통 계약 | 주의할 분기 |
+| 항목 | 앱 즉석 생성 | 사용자별 사전 생성 |
 |---|---|---|
-| GitHub 조회 | `fetchGitHub`, `fetchDefaultBranch`, `fetchCommitDetail` | 사용자 덱은 사용자 토큰을 쓴다. 서버 데모 캐시는 토큰 없이 공개 저장소를 읽는다. 앱 fallback은 별도 브라우저 구현이다. |
-| 입력 구성 | `formatCommitDiff`는 메시지·짧은 SHA·파일 상태·patch의 Markdown diff를 만든다 | 사용자 경로는 이 diff를 AI 입력 및 `rawDiff`로 쓴다. 데모 캐시의 AI 입력은 파일 5개와 patch 2개의 짧은 요약이고, 카드 뒷면용 `rawDiff`는 별도로 제한해 만든다. |
-| 모델 호출 | `requestFlashcardCompletion`은 프롬프트를 30,000자로 절단하고 Structured Outputs의 `items[].question`, `answer`, `highlights` 스키마로 호출한다 | `OPENAI_API_KEY`가 없거나 OpenAI가 실패하면 오류다. 생성은 `low` reasoning effort와 8,192 completion-token 상한을 쓴다. |
-| 파싱·카드화 | `parseFlashcardItems`는 문자열 question·answer가 아닌 항목을 버리고 유효한 문자열 highlight만 남긴다 | 데모 캐시는 각 커밋에서 첫 항목만 사용한다. 앱은 HTTP 정규화 응답을 자체 파싱하고 모든 유효 항목을 카드화한다. |
+| 날짜와 순서 | 브라우저 현재 시각 기준으로 저장소 × 날짜를 순차 처리 | 사용자 IANA 시간대의 날짜 범위를 사용하고 저장소·날짜 조합을 병렬 처리하되 결과 순서는 저장소, 날짜 순으로 유지 |
+| GitHub·AI 경계 | 앱의 GitHub 함수 호출과 공개 AI HTTP 함수를 조합 | 서버의 `fetchGitHub`, `fetchCommitDetail`, `formatCommitDiff`, `generateFlashcardItems`를 사용 |
+| 저장 | 카드가 있으면 해당 언어 필드에 병합 저장 | 생성 전과 저장 트랜잭션 안에서 기존 덱을 확인한 뒤에만 저장 |
+| 실패 | 조합 오류를 건너뛰고, 최종 빈 결과는 빈 화면 | 일부 실패로 전체가 비면 재시도하고, 커밋 없음과 설정 불가는 완료로 기록 |
 
-구조화 출력은 응답 모양을 강제하지만, 파싱 실패는 여전히 가능하다. 공용 서버 파서는 `JSON.parse` 오류를 잡지 않으므로 호출은 실패하고, 데모 캐시는 커밋 하나를 건너뛰며 사용자 사전 생성은 조합 실패로 집계한다. 앱 즉시 생성도 해당 조합을 건너뛴다. 따라서 스키마 변경 시에는 정상 응답뿐 아니라 빈 `items`, 잘못된 JSON, 부분적으로 잘못된 항목의 경로별 결과를 확인해야 한다.
+공용 서버 생성은 토큰이 있으면 GitHub Bearer 인증을, 없으면 데모 User-Agent를 사용한다. 401은 `GitHubAuthError`로 구분한다. 기본 브랜치 조회의 일반 오류는 브랜치 없이 후속 조회를 계속하지만 인증 오류는 전파한다. 커밋 목록에는 파일 diff가 없으므로 상세 조회 후 `formatCommitDiff`가 커밋 메시지, 짧은 SHA, 파일 상태와 patch를 Markdown으로 구성한다.
 
-## 저장 형식과 함께 바꿔야 하는 계약
+모델 입력은 30,000자로 절단한다. Structured Outputs는 `items[].question`, `answer`, `highlights`를 요구하고, 파서는 문자열 질문·답변이 아닌 항목을 버리며 유효한 문자열 highlight만 남긴다. 따라서 JSON 파싱 실패나 빈 항목은 경로마다 카드 없음 또는 해당 조합 실패로 나타날 수 있다. 데모 사전 생성은 커밋당 첫 카드만 사용한다.
 
-앱과 Functions는 별도 패키지라 타입과 정책 일부를 복제한다. 다음은 한쪽만 바꾸면 즉시 생성·사전 생성·언어 전환의 결과가 달라질 수 있어 같은 PR에서 검토해야 하는 계약이다.
+### 사용자별 사전 생성과 경합
 
-| 계약 | 앱 | Functions 및 영향 |
-|---|---|---|
-| 복습 날짜 | `DATES_AGO_FREE = [1, 7]`, `DATES_AGO_PRO = [1, 7, 30]` | `flashcard-pregeneration.ts`에도 같은 값이 있다. 등급별 카드 범위가 달라지므로 함께 변경한다. |
-| 사용자 날짜 덱 형태 | `FlashCardData`의 question, answer, highlights, metadata와 `data_ko`/`data_en` 필드 | 사전 생성의 `FlashcardData` 및 공용 Structured Output이 호환되어야 한다. metadata의 `rawDiff`, files, repositoryFullName, branch는 뒷면·재생성에 쓰인다. |
-| 덱 크기 예산과 축소 | `app/src/features/flashcard/lib/deck-size.ts` | `functions/src/flashcard-deck-size.ts`는 같은 900,000-byte 문서 안전 상한, 언어별 450,000-byte 예산, diff 축소 규칙을 복제한다. 자세한 계약은 [덱 문서 크기 예산](deck-size-budget.md)을 따른다. |
-| 데모 캐시 ID | `toDemoFlashcardCacheId` | `owner__repo__lang` 형식이 서버와 같아야 공개 캐시를 찾는다. `/`를 문서 ID에 쓸 수 없다. |
+매시 정각 스케줄러는 언어·유효한 시간대·저장소 설정이 있고 최근 7일 활동한 사용자 중 현지 시각 0시 이상 6시 미만인 대상을 Cloud Tasks에 넣는다. 같은 날짜를 끝낸 사용자는 서버 전용 `flashcardPregeneration/{uid}` 기록으로 건너뛴다. 태스크와 다음 스케줄 시각의 재시도, 완료 상태의 자세한 의미는 [오늘의 플래시카드 사전 생성](pregeneration.md)에 있다.
 
-특히 번역 저장은 기존 반대 언어 덱의 직렬화 크기를 빼서 남은 예산과 기본 언어별 예산 중 작은 값을 사용한다. 사전 생성은 어느 언어 덱이든 이미 있으면 작업을 포기하므로, 비어 있는 다른 언어 필드를 나중에 채우는 책임은 이 번역 경로에 있다.
+작업은 어느 언어든 비어 있지 않은 덱이 이미 있으면 생성 전에 포기하고 `exists`를 기록한다. 생성 도중 앱이 먼저 저장할 수 있으므로, 실제 저장도 트랜잭션에서 다시 확인한다. 이 이중 확인은 사전 생성이 앱의 덱을 덮어쓰지 않는 불변식이다.
 
-## 생성 후: 번역과 질문 재생성
+완료 기록의 결과는 `saved`, `exists`, `empty`, `unavailable`이다. GitHub 토큰 무효 또는 필요한 설정 누락은 `unavailable`, 실패한 조합 없이 카드가 없으면 `empty`로 확정한다. 반대로 일시 오류나 일부 조합 실패 때문에 덱이 비면 완료 기록 없이 오류를 던져 태스크와 새벽 구간의 다음 스케줄이 다시 시도하게 한다.
 
-```mermaid
-flowchart LR
-  Stored["저장된 언어별 사용자 덱"] --> Switch{"현재 언어 덱 존재"}
-  Switch -->|"아니오 반대 언어 존재"| Translation["translateFlashcards"]
-  Translation --> Merge["예산 축소 후 data 언어 저장"]
-  Stored --> RawDiff{"카드에 rawDiff 존재"}
-  RawDiff -->|"예"| Regen["regenerateCardQuestion"]
-  Regen --> Updated["질문과 highlights 교체"]
-  Updated --> UserMerge["사용자 덱 병합 저장"]
-  RawDiff -->|"아니오"| NoRegen["재생성 불가"]
-```
+## 랜딩 데모 경로
 
-*사용자 날짜 덱에서는 언어 전환이 번역 저장으로, 원문 diff가 있는 카드의 질문 변경이 재생성 저장으로 이어진다.*
+매일 09:00 KST `refreshTrendingRepos`는 GitHub Trending을 최대 10개까지 수집한다. 파싱 결과가 5개 미만이면 기존 Trending 목록과 데모 카드를 유지한다. 충분하면 먼저 `meta/trendingRepos`를 갱신하고, 이어서 저장소별·`ko`/`en`별로 기본 브랜치 최근 세 커밋의 카드를 생성한다. 카드 생성 실패는 이미 저장한 Trending 목록을 되돌리지 않는다.
 
-`translateFlashcards`는 최대 200장의 question·answer만 Structured Outputs로 번역하고, 응답을 원본 카드 인덱스에 다시 붙인다. 결과 개수가 맞지 않는 항목은 원문 질문·답변을 유지한다. 카드 수 또는 직렬화 본문 길이가 상한을 넘으면 생성과 달리 자르지 않고 413으로 거부한다. 대응 관계를 잃지 않기 위해서다.
+데모 사전 생성은 저장소를 순차 처리하고 저장소 안의 커밋은 병렬 처리한다. 커밋당 첫 카드 한 장만 저장하며, 카드 뒷면용 파일은 최대 10개, 각 patch는 최대 4,000자로 제한한다. 직렬화 문서가 900,000 bytes를 넘으면 그 언어 캐시를 저장하지 않고, 이번 Trending 목록에서 빠진 캐시는 삭제한다.
 
-`regenerateCardQuestion`은 `rawDiff`, 기존 질문·답변, 그리고 최대 10개의 다른 질문을 받아 **새 질문과 highlights만** 반환한다. 로그인 사용자는 카드 화면이 그 결과를 날짜 덱의 현재 언어 필드에 병합 저장하지만, 랜딩 데모의 변경은 React Query 캐시에만 반영되어 공개 `demoFlashcards` 문서를 바꾸지 않는다. 재생성은 별도 일일 카운터 정책과 자체 응답 스키마·4,096-token 상한을 사용하므로, 공용 카드 생성 함수 또는 AI quota 정책과 동일하다고 가정하면 안 된다.
+랜딩의 `useDemoFlashcards`는 기본 브랜치 URL일 때만 공개 캐시를 읽는다. 캐시가 없거나 읽기가 실패하거나 URL에 `@branch`가 있으면 `generateDemoFlashcards`로 대체한다. 이 브라우저 fallback은 공개 GitHub API에서 최근 세 커밋과 상세를 읽고 AI HTTP 함수를 호출하며 Firestore에는 쓰지 않는다. AI가 커밋별 카드 생성을 실패하면 이 fallback만의 평문 질문·답변을 만들어 세 카드의 표시를 계속한다.
 
-## 변경·운영 점검
+## 번역과 질문 재생성
 
-- 공용 프롬프트, 모델, 응답 스키마 또는 prompt 상한을 바꿀 때는 `flashcard-generation.ts`뿐 아니라 앱의 `FlashcardStructuredOutput`, 데모 fallback, 질문 재생성의 별도 스키마를 카드 필드 관점에서 대조한다.
-- 복습 날짜·카드 타입·덱 축소 규칙을 바꿀 때는 앱 즉시 생성, 서버 사전 생성, 반대 언어 번역 저장을 함께 확인한다. 특히 Firestore 한 문서에 두 언어 배열이 공존한다.
-- Trending HTML 파서 또는 데모 저장 제한을 바꾸면 5개 미만 결과에서 기존 캐시가 보존되는지, 캐시 쓰기 실패가 목록을 막지 않는지, 오래된 언어별 문서가 제거되는지를 확인한다.
-- 사용자 사전 생성 변경은 앱과의 경합, GitHub 401의 `unavailable` 처리, 빈 결과와 부분 실패의 구분, 태스크 재시도를 점검한다.
-- 현재 `functions/`와 `app/`에 테스트 파일은 없다. 계약을 바꾸는 PR은 공용 생성의 유효·비정상 JSON, 덱 예산 경계, 사전 생성 트랜잭션 경합, 캐시 hit/miss와 `@branch` 우회를 fixture 기반 단위 또는 Emulator 테스트로 추가하는 것이 안전하다.
+`translateFlashcards`는 최대 200장의 `question`·`answer`만 배열로 보내고, 응답 인덱스를 원래 카드에 붙인다. 따라서 `highlights`와 `metadata`는 보존되며, 응답 수가 맞지 않는 위치는 원문 질문·답변을 유지한다. 카드 수 또는 직렬화 본문이 상한을 넘으면 대응 관계가 깨지는 절단 대신 413으로 거부한다.
+
+질문 재생성은 `rawDiff`, 기존 질문·답변, 최대 10개의 다른 질문을 입력으로 새 `question`과 `highlights`만 돌려준다. 로그인 카드 화면은 이를 현재 언어의 오늘 날짜 덱에 병합 저장한다. 랜딩 데모는 `replaceCards`로 React Query 캐시만 바꾸므로 공개 `demoFlashcards` 문서는 수정하지 않는다.
+
+재생성 버튼의 잠금과 서버 한도는 별개다. 카드 UI는 `rawDiff`가 있을 때만 버튼을 보이고, 현재 요청 중인 카드만 `regeneratingIndex`로 비활성화한다. 로그인 화면의 `useRegenerateQuota`는 서버 전용 `regenerateCounts`를 구독해 `canRegenerate`가 거짓이면 요청을 시작하지 않는 **표시·사전 차단**이다. 그러나 실제 한도 검사는 서버가 KST 날짜 기준으로 Free 3회, Pro 20회, 비로그인 데모 1회를 적용하여 429를 반환하는 것으로 결정된다. 네트워크 지연, 여러 화면, 직접 요청 또는 UI 상태 불일치 때문에 UI가 열려 있어도 서버 오류와 429를 처리해야 하며, 성공한 AI 응답 뒤에만 서버 카운터가 증가한다.
+
+## 변경과 운영 점검
+
+- 카드 형식, 프롬프트·응답 스키마, diff 길이 또는 덱 예산을 바꿀 때는 앱 타입, 앱 축소기, Functions 축소기, 번역의 인덱스 보존, 재생성 입력을 함께 검토한다.
+- 날짜·시간대 또는 사전 생성 동시성을 바꿀 때는 앱과의 경합, 두 번의 기존 덱 확인, 빈 결과와 부분 실패의 구분을 확인한다.
+- 데모 캐시를 바꿀 때는 5개 미만 Trending 결과가 기존 캐시를 보존하는지, 캐시 읽기 실패와 `@branch`가 fallback하는지, 큰 문서가 저장되지 않는지를 확인한다.
+- 재생성 변경은 UI의 요청 중 잠금과 별도로 서버 429·인증·AI 오류가 사용자에게 표시되는지, 로그인 저장과 데모의 메모리 캐시 갱신이 섞이지 않는지를 확인한다.
+- 현재 `app/` 및 `functions/`에는 테스트 파일이 없다. 계약 변경에는 malformed JSON·빈 `items`, 번역 길이 불일치와 413, 덱 예산 경계, 사전 생성 트랜잭션 경합, 캐시 hit/miss와 `@branch` 우회, 재생성 429를 다루는 fixture 단위 테스트 또는 Emulator 테스트를 추가하는 것이 안전하다.
 
 ```bash
 pnpm --prefix functions run lint
